@@ -204,15 +204,32 @@ class PerceptionProcess(mp.Process):
         (fw, _), _ = cv2.getTextSize(fps_str, cv2.FONT_HERSHEY_SIMPLEX, 0.6, 2)
         self._draw_text(frame, fps_str, (w - fw - 20, h - 20), 0.6, (200, 200, 200))
 
-        # --- Kilitlenme Bölgesi: soldan %25, sağdan %25 boşluk;
-        #     üstten/alttan yükseklik %10 boşluk bırakan düz dikdörtgen ---
-        x1 = w // 6
-        x2 = w - w // 6
-        y1 = int(h * 0.10)
-        y2 = h - int(h * 0.10)
+        # --- Hedef Vuruş Alanı (AV): soldan/sağdan %25, üstten/alttan %10 ---
+        # ⚠️ Eskiden `w // 6` (=%16.7) çiziliyordu ama yorum %25 diyordu.
+        #    QR taraması artık BU kutuya kırpıldığı için ikisi aynı yerden
+        #    gelmek zorunda — yoksa çizilen kutu ile taranan bölge ayrışır
+        #    ve ekranda gördüğün şey `in_av` kararıyla uyuşmaz.
+        x1, y1, x2, y2 = self._av_bounds(w, h)
 
         box_color = (0, 255, 0)
         cv2.rectangle(frame, (x1, y1), (x2, y2), box_color, 2, cv2.LINE_AA)
+        self._draw_text(frame, "AV", (x1 + 8, y1 + 26), 0.6, box_color, thickness=1)
+
+        # --- QR tarama bölgesi (AV + pay) — gri kesikli ---
+        # Görsel hata ayıklama: pyzbar'ın gerçekte NEREYE baktığını gösterir.
+        if getattr(config, "QR_SCAN_ENABLED_ROI", True):
+            sx1, sy1, sx2, sy2 = self._scan_bounds(w, h)
+            dash, gap = 18, 12
+            for xx in range(sx1, sx2, dash + gap):
+                x_end = min(xx + dash, sx2)
+                cv2.line(frame, (xx, sy1), (x_end, sy1), (170, 170, 170), 1, cv2.LINE_AA)
+                cv2.line(frame, (xx, sy2), (x_end, sy2), (170, 170, 170), 1, cv2.LINE_AA)
+            for yy in range(sy1, sy2, dash + gap):
+                y_end = min(yy + dash, sy2)
+                cv2.line(frame, (sx1, yy), (sx1, y_end), (170, 170, 170), 1, cv2.LINE_AA)
+                cv2.line(frame, (sx2, yy), (sx2, y_end), (170, 170, 170), 1, cv2.LINE_AA)
+            self._draw_text(frame, "QR TARAMA", (sx1 + 8, sy1 - 10), 0.5,
+                            (170, 170, 170), thickness=1)
 
         # Kutu etiketi
 
@@ -225,16 +242,61 @@ class PerceptionProcess(mp.Process):
     # ------------------------------------------------------------------
     # QR işleme
     # ------------------------------------------------------------------
-    def _process_qr(self, frame: np.ndarray, seen: set) -> set:
-        h, w = frame.shape[:2]
-        if w > 800:
-            scan_frame = cv2.resize(frame, (w // 2, h // 2), interpolation=cv2.INTER_AREA)
-            scale = 2
-        else:
-            scan_frame = frame
-            scale = 1
+    def _av_bounds(self, w: int, h: int):
+        """
+        Hedef Vuruş Alanı sınırları (şartname Şekil 2/4: %25 yatay, %10 dikey).
 
-        gray     = cv2.cvtColor(scan_frame, cv2.COLOR_BGR2GRAY)
+        Not: config'ten `getattr` ile okunuyor ki bu dosya, AV sabitleri
+        eklenmemiş ESKİ bir config.py ile de çalışsın (şartname değerleri
+        varsayılan). Böylece iki dosya birbirinden bağımsız taşınabilir.
+        """
+        av_x1 = int(w * getattr(config, "AV_MARGIN_X", 0.25))
+        av_y1 = int(h * getattr(config, "AV_MARGIN_Y", 0.10))
+        return av_x1, av_y1, w - av_x1, h - av_y1
+
+    def _scan_bounds(self, w: int, h: int):
+        """
+        QR taranacak bölge: AV + pay.
+
+        AV'ye TAM kırpmıyoruz; kenardan taşan bir QR kırpılmış hâliyle
+        çözülüp kutusu AV sınırına yapışık görünür, yani AV DIŞINDAKİ bir
+        QR "içeride" sanılırdı. Geniş tarayıp katı içerme testi uyguluyoruz.
+        """
+        av_x1, av_y1, av_x2, av_y2 = self._av_bounds(w, h)
+        pad = float(getattr(config, "QR_SCAN_AV_PAD", 0.08))
+        pad_x = int(w * pad)
+        pad_y = int(h * pad)
+        return (max(0, av_x1 - pad_x), max(0, av_y1 - pad_y),
+                min(w, av_x2 + pad_x), min(h, av_y2 + pad_y))
+
+    def _process_qr(self, frame: np.ndarray, seen: set) -> set:
+        """
+        AV bölgesini KIRPARAK QR tara.
+
+        ⚠️ DEĞİŞİKLİK: eskiden `w > 800` ise TÜM KARE yarıya indiriliyordu.
+           Bu pyzbar'ı hızlandırır ama QR'ın piksel boyunu da yarılar, yani
+           decode menzilini kısaltır (~%30 kayıp ölçüldü). Kırpma aynı
+           hızlanmayı verir, çözünürlükten hiç feragat etmez: AV zaten
+           karenin %50 x %80'i = piksellerin ~%40'ı.
+        """
+        h, w = frame.shape[:2]
+        av_x1, av_y1, av_x2, av_y2 = self._av_bounds(w, h)
+
+        if getattr(config, "QR_SCAN_ENABLED_ROI", True):
+            x0, y0, x3, y3 = self._scan_bounds(w, h)
+        else:
+            x0, y0, x3, y3 = 0, 0, w, h
+
+        roi = frame[y0:y3, x0:x3]
+        if roi.size == 0:
+            return seen
+
+        scale = max(1, int(getattr(config, "QR_SCAN_DOWNSCALE", 1)))
+        if scale > 1:
+            roi = cv2.resize(roi, (roi.shape[1] // scale, roi.shape[0] // scale),
+                             interpolation=cv2.INTER_AREA)
+
+        gray     = cv2.cvtColor(roi, cv2.COLOR_BGR2GRAY)
         barcodes = decode(gray)
 
         for barcode in barcodes:
@@ -245,16 +307,35 @@ class PerceptionProcess(mp.Process):
             except Exception:
                 continue
 
-            x, y, bw, bh = (v * scale for v in barcode.rect)
+            # ROI + downscale'i geri al -> TAM KARE koordinatları
+            bx, by, bw, bh = barcode.rect
+            x  = x0 + bx * scale
+            y  = y0 + by * scale
+            bw = bw * scale
+            bh = bh * scale
 
-            # Anti-aliasing ile QR Çizimi
-            cv2.rectangle(frame, (x, y), (x + bw, y + bh), (0, 255, 0), 4, cv2.LINE_AA)
-            self._draw_text(frame, data[:20], (x, y - 10), 0.7, (0, 255, 0))
+            # Şartname s.18 (kamikaze): "QR kod sınırlarının TAMAMI Hedef
+            # Vuruş Alanı'nda olmalıdır. Sınır tespit değerlendirmesi için
+            # TOLERANS PAYI MEVCUT DEĞİLDİR." -> dört kenar da içeride mi?
+            in_av = (x >= av_x1 and y >= av_y1
+                     and (x + bw) <= av_x2 and (y + bh) <= av_y2)
+
+            # AV içindeyse yeşil, dışındaysa turuncu — Gazebo'da gözle ayırt
+            # edilebilsin diye. Turuncu = "okundu ama vuruş SAYILMAZ".
+            color = (0, 255, 0) if in_av else (0, 165, 255)
+            cv2.rectangle(frame, (x, y), (x + bw, y + bh), color, 4, cv2.LINE_AA)
+            self._draw_text(frame, "%s%s" % (data[:20], "" if in_av else "  [AV DISI]"),
+                            (x, y - 10), 0.7, color)
 
             if data and data not in seen:
                 seen.add(data)
-                logger.info("QR Kilitlendi: %s", data)
-                self.result_queue.put_nowait({"type": "qr", "data": data})
+                logger.info("QR Kilitlendi: %s  (AV icinde: %s)", data, in_av)
+                self.result_queue.put_nowait({
+                    "type":  "qr",
+                    "data":  data,
+                    "box":   [int(x), int(y), int(bw), int(bh)],
+                    "in_av": bool(in_av),
+                })
                 break  # ilk geçerli QR yeterli
 
         return seen

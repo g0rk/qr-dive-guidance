@@ -50,6 +50,38 @@ WS_PORT = 8765
 QR_SHOW_WINDOW: bool = True
 CAMERA_INDEX: int = 0
 
+# ==========================================
+# HEDEF VURUŞ ALANI (AV) ve QR TARAMA BÖLGESİ
+# ==========================================
+# AV = şartname Şekil 2 (Savaşan) / Şekil 4 (Kamikaze) — ikisi de AYNI:
+#   yatayda soldan ve sağdan %25, dikeyde üstten ve alttan %10 boşluk.
+#   -> x ∈ [0.25, 0.75],  y ∈ [0.10, 0.90]
+# ⚠️ HUD'daki kutu eskiden `w // 6` (=%16.7) çiziliyordu; yorumu %25 diyordu.
+#    Gerçek AV'den geniş bir kutu, AV dışındaki hedefleri "içeride" gösterir.
+AV_MARGIN_X: float = 0.25
+AV_MARGIN_Y: float = 0.10
+
+# QR taraması artık TÜM KAREYİ küçültmek yerine AV bölgesini KIRPIYOR.
+#
+# NEDEN: eski kod `w > 800` ise kareyi yarıya indiriyordu. Bu, pyzbar'ı
+# hızlandırır ama QR'ın piksel boyunu da yarılar, yani decode menzilini
+# kısaltır (12 mm lens + 2 m QR ile ölçülen kayıp ~%30: 89 m -> 62 m).
+# Kırpmak aynı hızlanmayı verir ve çözünürlükten HİÇ feragat etmez:
+# AV zaten karenin %50 genişlik x %80 yüksekliği = piksellerin ~%40'ı.
+QR_SCAN_ENABLED_ROI: bool = True
+
+# Tarama bölgesi AV'den ne kadar geniş olsun (kare oranı).
+# ⚠️ Şartname (s.18) kamikaze için "QR kod sınırlarının TAMAMI Hedef Vuruş
+#    Alanı'nda olmalıdır" diyor ve tolerans tanımıyor. Tam AV'ye kırpsaydık
+#    kenardan taşan bir QR kırpılmış hâliyle çözülür, kutusu AV sınırına
+#    yapışık görünür ve AV DIŞINDAKİ bir QR "içeride" sanılırdı.
+#    Geniş tarayıp sonra KATI içerme testi uyguluyoruz.
+QR_SCAN_AV_PAD: float = 0.08
+
+# Kırpılmış bölgeyi ayrıca küçültmek istersen (1 = küçültme yok).
+# Kırpma zaten yeterli hızlanmayı verdiği için varsayılan 1.
+QR_SCAN_DOWNSCALE: int = 1
+
 PURSUIT_THROTTLE        = 0.8    # sabit gaz
 PURSUIT_BASE_PITCH_DEG  = -5.0    # düz uçuşta hafif pozitif pitch (sabit kanat)
 PURSUIT_MIN_PITCH_DEG   = -20.0  # maksimum burun aşağı
