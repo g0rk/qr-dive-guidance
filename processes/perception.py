@@ -6,6 +6,7 @@ import logging
 import socket
 import struct
 import time
+import math
 import datetime
 
 import numpy as np
@@ -16,6 +17,47 @@ from logger import setup_logger
 import config
 
 logger = logging.getLogger("Perception")
+
+
+def polygon_to_corners(polygon, x0: int, y0: int, scale: int):
+    """
+    pyzbar polygon -> TAM KARE koordinatinda 4 kose, tutarli sirayla.  [Faz 1]
+
+    NEDEN: `barcode.rect` eksen-hizali sinirlayici kutudur. QR 55 derecelik
+    bir aciyla ve zeminde donmus olarak goruldugu icin goruntude bir KARE
+    degil, bir DORTGEN (yamuk) olusturur. Kutu o dortgeni cevreler, yani
+    QR'dan buyuktur - donme aciSina gore %41'e kadar. `barcode.polygon`
+    ise QR'in gercek dort kosesini verir ve pyzbar bunu ZATEN dondurmektedir;
+    simdiye kadar atiyorduk.
+
+    Donen sira: merkez etrafindaki aciya gore siralanmis (tutarli sarim),
+    ardindan sol-uste en yakin koseden baslatilmis. Bu, ayni sahnede ayni
+    ciktiyi garanti eder - hata ayiklamayi ve Faz 5'teki poz kestirimini
+    kolaylastirir.
+
+    ⚠️ Bu sira TUTARLIDIR ama KANONIK DEGILDIR: hangi kosenin QR'in
+       "sol ustu" oldugunu soylemez. solvePnP bunu ister; o is Faz 5'te,
+       finder pattern'lardan cikarilacak.
+
+    Dondurur: [[x,y] x 4]  ya da  None (dejenere tespit).
+    """
+    if polygon is None:
+        return None
+    # pyzbar bozuk/carpik kodlarda 4'ten farkli sayida nokta dondurebilir.
+    if len(polygon) != 4:
+        return None
+
+    pts = [(x0 + p.x * scale, y0 + p.y * scale) for p in polygon]
+
+    cx = sum(p[0] for p in pts) / 4.0
+    cy = sum(p[1] for p in pts) / 4.0
+    pts.sort(key=lambda p: math.atan2(p[1] - cy, p[0] - cx))
+
+    # Deterministik baslangic: sol-uste en yakin kose (x+y en kucuk).
+    start = min(range(4), key=lambda i: pts[i][0] + pts[i][1])
+    pts = pts[start:] + pts[:start]
+
+    return [[int(round(p[0])), int(round(p[1]))] for p in pts]
 
 class PerceptionMode(Enum):
     QR   = "qr"
@@ -339,15 +381,23 @@ class PerceptionProcess(mp.Process):
             #    (`data not in seen` kapisi). O haliyle dalis merkezlemesi
             #    IMKANSIZ - taze konum hic gelmiyor, tek bir eski mesaj var.
             #    `seen` artik yalnizca LOG'u bir kereye indirmek icin.
+            # Faz 1: QR'in GERCEK dort kosesi. pyzbar bunu zaten dondurmektedir;
+            # simdiye kadar atiyorduk ve yalnizca eksen-hizali kutuyu
+            # kullaniyorduk. Dejenere tespitte None doner -> tuketen taraf
+            # kutuya geri duser.
+            corners = polygon_to_corners(getattr(barcode, "polygon", None),
+                                         x0, y0, scale)
+
             if data:
                 self.result_queue.put_nowait({
-                    "type":   "qr",
-                    "data":   data,
-                    "box":    [int(x), int(y), int(bw), int(bh)],
-                    "center": [int(cx), int(cy)],
-                    "error":  [round(ex, 4), round(ey, 4)],
-                    "frame":  [int(w), int(h)],
-                    "in_av":  bool(in_av),
+                    "type":    "qr",
+                    "data":    data,
+                    "box":     [int(x), int(y), int(bw), int(bh)],
+                    "corners": corners,          # [[x,y] x 4] ya da None
+                    "center":  [int(cx), int(cy)],
+                    "error":   [round(ex, 4), round(ey, 4)],
+                    "frame":   [int(w), int(h)],
+                    "in_av":   bool(in_av),
                 })
 
             if data and data not in seen:
