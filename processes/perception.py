@@ -59,6 +59,63 @@ def polygon_to_corners(polygon, x0: int, y0: int, scale: int):
 
     return [[int(round(p[0])), int(round(p[1]))] for p in pts]
 
+
+def quad_center(corners):
+    """
+    Dortgenin KOSEGEN KESISIMI = karenin goruntudeki GERCEK merkezi. [Faz 2]
+
+    ⚠️ KOSELERIN ORTALAMASINI ALMAYIN. Perspektifte yanlistir.
+       Projektif geometride korunan sey sudur: bir karenin merkezi,
+       kosegenlerinin kesisimidir - ve dogrular perspektif altinda dogru
+       kaldigi icin, GORUNTUdeki kosegenlerin kesisimi de merkezin
+       goruntusudur. Ortalama ise agirlik merkezidir; yamuk bir sekilde
+       merkezden kayar.
+
+    corners sirali olmali (polygon_to_corners cikti sirasi): p0-p2 ve
+    p1-p3 kosegen olur.
+
+    Dondurur: (x, y) float  ya da  None.
+    """
+    if not corners or len(corners) != 4:
+        return None
+    (x1, y1), (x2, y2), (x3, y3), (x4, y4) = (
+        corners[0], corners[1], corners[2], corners[3])
+
+    # Kosegen 1: p0->p2   Kosegen 2: p1->p3   (a*x + b*y = c biciminde)
+    a1, b1 = y3 - y1, x1 - x3
+    c1 = a1 * x1 + b1 * y1
+    a2, b2 = y4 - y2, x2 - x4
+    c2 = a2 * x2 + b2 * y2
+
+    det = a1 * b2 - a2 * b1
+    if abs(det) < 1e-9:          # dejenere: kosegenler paralel/cakisik
+        return None
+    return ((b2 * c1 - b1 * c2) / det, (a1 * c2 - a2 * c1) / det)
+
+
+def quad_in_av(corners, av_x1, av_y1, av_x2, av_y2) -> bool:
+    """
+    QR'in dort kosesi de AV icinde mi.  [Faz 2]
+
+    ⚠️ DURUSTLUK NOTU - bu fonksiyon KARAR DEGISTIRMIYOR.
+       Faz 1'de "kutu QR'dan 2 kat buyuk oldugu icin gecerli vurus
+       reddedilebilir" diye yazmistim. YANLISTI ve olcumle curutuldu
+       (tests/test_faz2_center.py, 41 konum/aci, 0 ayrisma).
+
+       Sebep: AV EKSEN-HIZALI bir dikdortgen. Disbukey bir dortgenin
+       boyle bir dikdortgenin icinde olmasi <=> dort kosesinin de icinde
+       olmasi <=> koselerin min/max'inin icinde olmasi. Kosellerin
+       min/max'i ise sinirlayici kutunun ta kendisidir. Yani iki test
+       MATEMATIKSEL OLARAK OZDES; kutunun ALANININ 2 kat olmasi bunu
+       degistirmez. Olculdu: pyzbar `rect` == polygon bbox, 0 px fark.
+
+       Yine de duruyor cunku: (a) niyeti aciga vuruyor - test edilen sey
+       QR'in siniri, (b) AV bir gun eksen-hizali olmayan bir sekle
+       donerse dogru kalir, (c) Faz 5 zaten koselere muhtac.
+    """
+    return all(av_x1 <= px <= av_x2 and av_y1 <= py <= av_y2
+               for px, py in corners)
+
 class PerceptionMode(Enum):
     QR   = "qr"
     YOLO = "yolo"
@@ -356,11 +413,34 @@ class PerceptionProcess(mp.Process):
             bw = bw * scale
             bh = bh * scale
 
-            # Şartname s.18 (kamikaze): "QR kod sınırlarının TAMAMI Hedef
-            # Vuruş Alanı'nda olmalıdır. Sınır tespit değerlendirmesi için
-            # TOLERANS PAYI MEVCUT DEĞİLDİR." -> dört kenar da içeride mi?
-            in_av = (x >= av_x1 and y >= av_y1
-                     and (x + bw) <= av_x2 and (y + bh) <= av_y2)
+            # Faz 1: QR'in GERCEK dort kosesi. pyzbar bunu zaten dondurur;
+            # dejenere tespitte None -> kutuya geri duseriz.
+            corners = polygon_to_corners(getattr(barcode, "polygon", None),
+                                         x0, y0, scale)
+
+            # --- Faz 2: MERKEZ ve in_av gercek dortgenden ---
+            #
+            # MERKEZ: kosegen kesisimi kullaniliyor, kutunun ortasi degil.
+            # Perspektif altinda ikisi ayrisiyor - olculdu: gercekci dalis
+            # perspektifinde 2.8 px, agresif perspektifte 9.2 px.
+            # 6mm/2MP ile 2.8 px = 0.075 derece = 30 m'de yerde ~4 cm.
+            # Yani DAHA DOGRU ama etkisi kucuk; bedava oldugu icin dogrusu
+            # kullaniliyor.
+            #
+            # in_av: KARAR DEGISTIRMIYOR (bkz. quad_in_av docstring).
+            # AV eksen-hizali oldugu icin kutu testiyle ozdes. Niyeti
+            # aciga vurdugu ve Faz 5 koselere muhtac oldugu icin duruyor.
+            qc = quad_center(corners)
+            if corners and qc is not None:
+                in_av = quad_in_av(corners, av_x1, av_y1, av_x2, av_y2)
+                cx, cy = qc                 # kosegen kesisimi (bkz. quad_center)
+                kaynak = "dortgen"
+            else:
+                # Yedek: dejenere tespit. Kutu kaba ama guvenli.
+                in_av = (x >= av_x1 and y >= av_y1
+                         and (x + bw) <= av_x2 and (y + bh) <= av_y2)
+                cx, cy = x + bw / 2.0, y + bh / 2.0
+                kaynak = "kutu"
 
             # AV içindeyse yeşil, dışındaysa turuncu — Gazebo'da gözle ayırt
             # edilebilsin diye. Turuncu = "okundu ama vuruş SAYILMAZ".
@@ -369,10 +449,7 @@ class PerceptionProcess(mp.Process):
             self._draw_text(frame, "%s%s" % (data[:20], "" if in_av else "  [AV DISI]"),
                             (x, y - 10), 0.7, color)
 
-            # Normalize hata: ex>0 QR sagda, ey>0 QR asagida (goruntu y'si asagi buyur).
-            # Faz 2'de bu merkez, 4 kosenin KOSEGEN KESISIMI ile degistirilecek;
-            # simdilik sinirlayici kutunun ortasi.
-            cx, cy = x + bw // 2, y + bh // 2
+            # Normalize hata: ex>0 QR sagda, ey>0 QR asagida (goruntu y'si asagi buyur)
             ex = (cx - w / 2.0) / (w / 2.0)
             ey = (cy - h / 2.0) / (h / 2.0)
 
@@ -381,29 +458,27 @@ class PerceptionProcess(mp.Process):
             #    (`data not in seen` kapisi). O haliyle dalis merkezlemesi
             #    IMKANSIZ - taze konum hic gelmiyor, tek bir eski mesaj var.
             #    `seen` artik yalnizca LOG'u bir kereye indirmek icin.
-            # Faz 1: QR'in GERCEK dort kosesi. pyzbar bunu zaten dondurmektedir;
-            # simdiye kadar atiyorduk ve yalnizca eksen-hizali kutuyu
-            # kullaniyorduk. Dejenere tespitte None doner -> tuketen taraf
-            # kutuya geri duser.
-            corners = polygon_to_corners(getattr(barcode, "polygon", None),
-                                         x0, y0, scale)
+            self.result_queue.put_nowait({
+                "type":    "qr",
+                "data":    data,
+                "box":     [int(x), int(y), int(bw), int(bh)],
+                "corners": corners,          # [[x,y] x 4] ya da None (Faz 1)
+                "center":  [int(round(cx)), int(round(cy))],
+                "error":   [round(ex, 4), round(ey, 4)],
+                "frame":   [int(w), int(h)],
+                "in_av":   bool(in_av),
+                "src":     kaynak,           # "dortgen" | "kutu" (Faz 2)
+            })
 
-            if data:
-                self.result_queue.put_nowait({
-                    "type":    "qr",
-                    "data":    data,
-                    "box":     [int(x), int(y), int(bw), int(bh)],
-                    "corners": corners,          # [[x,y] x 4] ya da None
-                    "center":  [int(cx), int(cy)],
-                    "error":   [round(ex, 4), round(ey, 4)],
-                    "frame":   [int(w), int(h)],
-                    "in_av":   bool(in_av),
-                })
-
-            if data and data not in seen:
+            if data not in seen:
                 seen.add(data)
-                logger.info("QR Kilitlendi: %s  (AV icinde: %s)", data, in_av)
-                break  # ilk geçerli QR yeterli
+                logger.info("QR Kilitlendi: %s  (AV icinde: %s, kaynak: %s)",
+                            data, in_av, kaynak)
+
+            # Ilk gecerli QR yeterli. ⚠️ Bu `break` eskiden `data not in seen`
+            # blogunun ICINDEydi: ayni QR ikinci kez gorulunce dongu kirilmiyor,
+            # kalan barkodlar bosuna taraniyordu.
+            break
 
         return seen
 
