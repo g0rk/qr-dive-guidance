@@ -1,0 +1,8 @@
+__pycache__/
+*.py[cod]
+*.so
+.venv/
+venv/
+*.log
+*.ulg
+mission_logs.json
