@@ -6,6 +6,7 @@ import multiprocessing as mp
 import asyncio
 import logging
 import json
+import time
 
 from logger import setup_logger
 
@@ -43,6 +44,24 @@ class MissionController(mp.Process):
         self.vehicle = vehicle
 
         self.target: dict | None = None  # for simulation video
+
+        # --- Algı sonuçları (perception_result_queue'dan doldurulur) ---
+        # ⚠️ P1: Bu kuyruk daha önce HİÇ OKUNMUYORDU. Constructor'da saklanıp
+        #    orada bitiyordu. İki sonucu vardı:
+        #      1. QR verisi göreve hiç ulaşmıyordu -> dalış kamerayı göremiyor,
+        #         "QR'a dal" diye bir şey mümkün değil.
+        #      2. mp.Queue SINIRSIZ BÜYÜYOR. Algı ~30 FPS üretiyor, kimse
+        #         tüketmiyor; 15 dakikalık bir koşuda RAM'de birikir.
+        #    Artık her tick'te _drain_perception() ile tamamen boşaltılıyor.
+        self.qr_result: dict | None = None    # son QR: data/box/in_av/t
+        self.detections: dict | None = None   # son YOLO tespit paketi
+        # AV icinde QR okundugu an DiveState tarafindan doldurulur.
+        # Sartname s.18: kamikaze vurus tespitinin DORT sartindan biri
+        # "Kamikaze paketinin sunucuya gonderilmesi". Sunucu istemcisi
+        # henuz yok; burada uretilip saklaniyor ki kopru gelince hazir olsun.
+        self.kamikaze_hit: dict | None = None
+
+        self._qr_seen: set = set()            # yalnızca "yeni QR" logu için
 
     # Process entry point
     def run(self) -> None:
@@ -128,6 +147,10 @@ class MissionController(mp.Process):
         while self._running:
             await self._drain_commands() # Yeri değişebilir
             
+            # P1: Algi kuyrugunu her tick'te TAMAMEN bosalt. Bu satir olmadan
+            # kuyruk sinirsiz buyur ve algi sonuclari goreve hic ulasmaz.
+            self._drain_perception()
+
             tel = self.telemetry.get()
             # safety_result = self._safety.check(tel)
 
@@ -182,6 +205,43 @@ class MissionController(mp.Process):
                 await self._change_state(result.new_state)
             else:
                 logger.warning("Command rejected: %s", result.reason)
+
+    def _drain_perception(self) -> None:
+        """
+        perception_result_queue'yu tek tick'te tamamen bosalt.  [P1]
+
+        Bu kuyruk PerceptionProcess'ten gelir ve IKI isi vardir:
+          1. Algi sonuclarini goreve ulastirmak (QR konumu, YOLO tespitleri)
+          2. Bosaltilmadigi surece SINIRSIZ BUYUMEK
+
+        (2) gercek bir risk: perception ~30 FPS uretiyor, kimse okumuyordu.
+
+        Yalnizca SON deger saklanir - eski algi verisi kontrol icin degersiz,
+        ustelik bayat veriyle komut uretmek tehlikeli (bkz. dive_state._fresh_qr).
+        """
+        while True:
+            try:
+                msg = self.perception_result_queue.get_nowait()
+            except Exception:
+                break  # queue.Empty - kuyruk bosaldi
+
+            if not isinstance(msg, dict):
+                continue
+
+            msg_type = msg.get("type")
+            if msg_type == "qr":
+                # Tuketen taraf bayatliga kendisi karar verebilsin diye
+                # varis anini damgaliyoruz (perception 't' gondermiyor).
+                msg = dict(msg)
+                msg.setdefault("t", time.monotonic())
+                self.qr_result = msg
+                data = msg.get("data")
+                if data and data not in self._qr_seen:
+                    self._qr_seen.add(data)
+                    logger.info("QR okundu: %s (AV icinde: %s)",
+                                data, msg.get("in_av"))
+            elif msg_type == "yolo":
+                self.detections = msg
 
     # TODO
     def _push_status(self, payload: dict) -> None:

@@ -327,15 +327,32 @@ class PerceptionProcess(mp.Process):
             self._draw_text(frame, "%s%s" % (data[:20], "" if in_av else "  [AV DISI]"),
                             (x, y - 10), 0.7, color)
 
+            # Normalize hata: ex>0 QR sagda, ey>0 QR asagida (goruntu y'si asagi buyur).
+            # Faz 2'de bu merkez, 4 kosenin KOSEGEN KESISIMI ile degistirilecek;
+            # simdilik sinirlayici kutunun ortasi.
+            cx, cy = x + bw // 2, y + bh // 2
+            ex = (cx - w / 2.0) / (w / 2.0)
+            ey = (cy - h / 2.0) / (h / 2.0)
+
+            # ⚠️ P4: HER KAREDE yayinlanir.
+            #    Eskiden yalnizca QR ILK GORULDUGUNDE gonderiliyordu
+            #    (`data not in seen` kapisi). O haliyle dalis merkezlemesi
+            #    IMKANSIZ - taze konum hic gelmiyor, tek bir eski mesaj var.
+            #    `seen` artik yalnizca LOG'u bir kereye indirmek icin.
+            if data:
+                self.result_queue.put_nowait({
+                    "type":   "qr",
+                    "data":   data,
+                    "box":    [int(x), int(y), int(bw), int(bh)],
+                    "center": [int(cx), int(cy)],
+                    "error":  [round(ex, 4), round(ey, 4)],
+                    "frame":  [int(w), int(h)],
+                    "in_av":  bool(in_av),
+                })
+
             if data and data not in seen:
                 seen.add(data)
                 logger.info("QR Kilitlendi: %s  (AV icinde: %s)", data, in_av)
-                self.result_queue.put_nowait({
-                    "type":  "qr",
-                    "data":  data,
-                    "box":   [int(x), int(y), int(bw), int(bh)],
-                    "in_av": bool(in_av),
-                })
                 break  # ilk geçerli QR yeterli
 
         return seen

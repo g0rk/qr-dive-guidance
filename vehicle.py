@@ -157,6 +157,55 @@ class Vehicle:
             logger.error("goto_location failed: %s", e)
             raise VehicleCommandError(f"goto_location failed: {e}") from e
 
+    def field_elevation_m(self) -> float:
+        """
+        Kalkis sahasinin deniz seviyesine gore yuksekligi (m).  [P2]
+
+        MAVSDK `position` hem mutlak (AMSL) hem goreli irtifayi veriyor;
+        farklari home noktasinin AMSL yuksekligidir.
+        """
+        tel = self._telemetry_store.get()
+        return tel.abs_alt_m - tel.rel_alt_m
+
+    async def goto_location_rel(self, lat: float, lon: float, rel_alt_m: float,
+                                yaw_deg: float = 0.0) -> None:
+        """
+        goto_location'in GORELI irtifa alan hali.  [P2]
+
+        ⚠️ NEDEN VAR: `action.goto_location()` MAVSDK'de **MUTLAK (AMSL)**
+           irtifa bekler. Projedeki diger her irtifa ise GORELI:
+           TAKEOFF_ALTITUDE_M (MAVSDK takeoff zaten goreli alir),
+           DIVE_MIN_ENTRY_ALTITUDE_M, DIVE_PULL_UP_ALTITUDE_M ve tum
+           guvenlik kontrolleri `tel.rel_alt_m` uzerinden calisiyor.
+           Sartname de goreli konusuyor (s.18: "kalkis pistine goreli
+           olarak en az 100 m").
+
+           Ikisi karistirildiginda sonuc SESSIZ ve olumcul:
+           yaklasma 100 m AMSL'e komut ediyor, dalis izni ise
+           rel_alt >= esik ariyordu. Saha deniz seviyesinde DEGILSE
+           rel_alt her zaman daha kucuk kalir ve dalis HIC tetiklenmez.
+
+           ⚠️ SIMULASYONDA DOGRUDAN ISIRIYOR: PX4 SITL'in varsayilan
+           dunyasi Zurih, **488 m AMSL**. Duzeltilmeden "100 m AMSL"e
+           ucmak, yerin 388 m ALTINA komut vermek demek.
+
+           Kural: MAVSDK sinirinda cevirir, config'te goreli tutariz.
+        """
+        tel = self._telemetry_store.get()
+        if tel.last_update_time == 0.0:
+            raise VehicleCommandError(
+                "goto_location_rel: telemetri henuz gelmedi, saha yuksekligi "
+                "bilinmiyor - goreli irtifa mutlaga cevrilemez"
+            )
+
+        elevation = self.field_elevation_m()
+        abs_alt_m = elevation + rel_alt_m
+        logger.info(
+            "goto_location_rel: rel=%.1fm + saha=%.1fm AMSL -> mutlak=%.1fm",
+            rel_alt_m, elevation, abs_alt_m,
+        )
+        await self.goto_location(lat, lon, abs_alt_m, yaw_deg)
+
     async def set_attitude(self, roll_deg: float, pitch_deg: float, yaw_rate_deg_s: float, thrust: float) -> None:
         try:
             attitude = Attitude(roll_deg, pitch_deg, yaw_rate_deg_s, thrust)

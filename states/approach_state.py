@@ -65,7 +65,13 @@ class ApproachState(BaseState):
         )
 
         try:
-            await mission.vehicle.goto_location(
+            # P2: GORELI irtifa ile komut ediyoruz. `goto_location()` MAVSDK'de
+            #     MUTLAK (AMSL) bekler; buraya dogrudan APPROACH_SAFE_ALTITUDE_M
+            #     verilirse deniz seviyesinde OLMAYAN her sahada yanlis irtifaya
+            #     ucariz ve asagidaki rel_alt kontrolu her seferinde ABORT uretir.
+            #     PX4 SITL varsayilani Zurih (488 m) -> yerin 388 m alti.
+            #     Ayrinti: vehicle.goto_location_rel
+            await mission.vehicle.goto_location_rel(
                 ghost_lat, ghost_lon, config.APPROACH_SAFE_ALTITUDE_M,
             )
             self._command_sent = True
