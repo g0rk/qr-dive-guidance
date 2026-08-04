@@ -80,7 +80,16 @@ TAKEOFF_ALTITUDE_M = 120.0
 #     DUSUYOR ve plakalar bastan sona kapatiyor.
 #
 # 55 derece secildi: plaka sinirina 10 derece pay birakir ve tetik
-# mesafesini makul tutar (100/tan55 = 70 m).
+# mesafesini makul tutar.
+#
+# ⚠️ BU YORUM BAYATLAMISTI: eskiden "(100/tan55 = 70 m)" yaziyordu, cunku
+#    o zaman APPROACH_SAFE_ALTITUDE_M 100 idi. Sonradan 120'ye cikarildi
+#    (dalis esigine 20 m pay birakmak icin) ama yorumdaki ornek hesap
+#    guncellenmedi. Gercek deger:
+#        APPROACH_DIVE_ARM_DISTANCE_M = 120 / tan(55) = 84.02 m
+#    Ironik olan: bu yorum blogunun TAMAMI "iki sabit sessizce ayrilmasin"
+#    diye yazilmisti; yorumun kendisi ayrildi. Bu yuzden asagida ornek
+#    sayi degil, TURETMENIN KENDISI birakildi.
 DIVE_PITCH_DEG = -55.0                  # nose-down pitch command (negative = down)
 DIVE_ROLL_DEG = 0.0
 DIVE_THROTTLE = 0.0                     # 0.0 - 1.0
@@ -179,40 +188,47 @@ KAMIKAZE_QR_MAX_AGE_S: float = 0.5
 # QR okununca dalisi bitirip PULL_UP'a gec.
 KAMIKAZE_PULLUP_ON_QR: bool = True
 
-PURSUIT_THROTTLE        = 0.8    # sabit gaz
-PURSUIT_BASE_PITCH_DEG  = -5.0    # düz uçuşta hafif pozitif pitch (sabit kanat)
-PURSUIT_MIN_PITCH_DEG   = -20.0  # maksimum burun aşağı
-PURSUIT_MAX_PITCH_DEG   =  15.0  # maksimum burun yukarı
- 
-PURSUIT_MAX_ROLL_DEG    = 35.0   # bank-to-turn maks roll
- 
-# Yaw hatası → roll kazancı: 1° yaw hatası = kaç derece roll?
-# 1.0 başlangıç için iyidir, agresif dönüş istersen artır
-PURSUIT_ROLL_GAIN       = 1.0
- 
-# İrtifa hatası → pitch kazancı: 10m fark = kaç derece pitch?
-# 0 yapılırsa irtifa takibi kapatılır, sadece yatay yaklaşım
-PURSUIT_PITCH_GAIN      = 0.1
-
-
 # ==========================================
 # PURSUIT (TAKİP/YAKLAŞMA) STATE AYARLARI
 # ==========================================
+#
+# ⚠️ BU BLOK ESKİDEN İKİ KEZ TANIMLIYDI (taban koddan miras, ilk sürüm).
+#    Python'da aynı isme ikinci kez atama yapılırsa SON atama kazanır — yani
+#    üstteki blok TAMAMEN ÖLÜYDÜ. Oradaki bir değeri ayarlayan kişi hiçbir
+#    etki görmezdi ve bunu hiçbir test yakalamazdı (ikisi de geçerli Python).
+#
+#      sabit                     ölü blok     yürürlükteki
+#      PURSUIT_THROTTLE           0.8            0.65
+#      PURSUIT_BASE_PITCH_DEG    -5.0           +2.0    ← İŞARET DÖNÜYOR
+#      PURSUIT_PITCH_GAIN         0.1            0.5     ← 5 kat
+#      PURSUIT_MAX_ROLL_DEG      35.0           45.0
+#      PURSUIT_MIN_PITCH_DEG    -20.0          -15.0
+#      PURSUIT_MAX_PITCH_DEG     15.0           20.0
+#
+#    Silinen ÜSTTEKİ (ölü) bloktu; aşağıdaki değerler zaten uçan değerlerdi,
+#    yani bu temizlik davranışı DEĞİŞTİRMEZ.
+#    ⚠️ Ölü blok PURSUIT_MIN_ROLL_DEG'i tanımlamıyordu ama pursuit_state.py
+#       onu kullanıyor → yanlış bloğu silmek PURSUIT'i AttributeError ile
+#       düşürürdü. Doğrulandı: silmeden önce iki blok da okundu.
 
 # --- Gaz (Throttle) Ayarı ---
-# 0.0 ile 1.0 arasında bir değer. 
+# 0.0 ile 1.0 arasında bir değer.
 # Sabit kanadın stall (perdövites) olmaması ve hedefi yakalaması için gereken seyir gazı.
-PURSUIT_THROTTLE = 0.65 
+PURSUIT_THROTTLE = 0.65
 
 # --- Roll (Yatış/Sağ-Sol) Ayarları ---
 # Uçağın hedefe dönmek için ne kadar agresif yatacağını belirler.
-PURSUIT_ROLL_GAIN = 1.0        # Açı farkı çarpanı (Dönüş yavaş kalıyorsa artır, titreme yapıyorsa azalt)
+# Kazanç = yaw hatası → roll dönüşümü: 1° yaw hatası kaç derece roll üretsin?
+# 1.0 başlangıç için iyidir; dönüş yavaş kalıyorsa artır, titreme yapıyorsa azalt.
+PURSUIT_ROLL_GAIN = 1.0        # Açı farkı çarpanı
 PURSUIT_MIN_ROLL_DEG = -45.0   # Maksimum sola yatış sınırı (derece)
 PURSUIT_MAX_ROLL_DEG = 45.0    # Maksimum sağa yatış sınırı (derece)
 
 # --- Pitch (Yunuslama/İrtifa) Ayarları ---
 # Uçağın irtifasını sabit tutması için gereken burun aşağı/yukarı limitleri.
-PURSUIT_BASE_PITCH_DEG = 2.0   # Uçağın irtifa kaybetmeden düz uçması için gereken standart trim açısı
-PURSUIT_PITCH_GAIN = 0.5       # İrtifa hatası çarpanı (İrtifayı toparlayamıyorsa hafifçe artır)
-PURSUIT_MIN_PITCH_DEG = -15.0  # Maksimum dalış açısı (Güvenlik için çok eksi yapma, hız patlaması olur)
-PURSUIT_MAX_PITCH_DEG = 20.0   # Maksimum tırmanış açısı (Güvenlik için çok artı yapma, uçak stall olur)
+# Kazanç = irtifa hatası → pitch dönüşümü: 10 m fark kaç derece pitch üretsin?
+# 0 yapılırsa irtifa takibi tamamen kapanır, sadece yatay yaklaşım kalır.
+PURSUIT_BASE_PITCH_DEG = 2.0   # İrtifa kaybetmeden düz uçmak için standart trim açısı
+PURSUIT_PITCH_GAIN = 0.5       # İrtifa hatası çarpanı (toparlayamıyorsa hafifçe artır)
+PURSUIT_MIN_PITCH_DEG = -15.0  # Maksimum dalış açısı (çok eksi yapma, hız patlaması olur)
+PURSUIT_MAX_PITCH_DEG = 20.0   # Maksimum tırmanış açısı (çok artı yapma, uçak stall olur)
