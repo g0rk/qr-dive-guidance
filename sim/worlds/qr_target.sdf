@@ -1,4 +1,4 @@
-<?xml version="1.0" encoding="UTF-8"?>
+<?xml version='1.0' encoding='utf-8'?>
 <sdf version="1.9">
   <world name="qr_target">
     <physics type="ode">
@@ -6,19 +6,19 @@
       <real_time_factor>1.0</real_time_factor>
       <real_time_update_rate>250</real_time_update_rate>
     </physics>
-    <plugin name="gz::sim::systems::Physics" filename="gz-sim-physics-system"/>
-    <plugin name="gz::sim::systems::UserCommands" filename="gz-sim-user-commands-system"/>
-    <plugin name="gz::sim::systems::SceneBroadcaster" filename="gz-sim-scene-broadcaster-system"/>
-    <plugin name="gz::sim::systems::Contact" filename="gz-sim-contact-system"/>
-    <plugin name="gz::sim::systems::Imu" filename="gz-sim-imu-system"/>
-    <plugin name="gz::sim::systems::AirPressure" filename="gz-sim-air-pressure-system"/>
-    <plugin name="gz::sim::systems::ApplyLinkWrench" filename="gz-sim-apply-link-wrench-system"/>
-    <plugin name="gz::sim::systems::NavSat" filename="gz-sim-navsat-system"/>
+    <plugin name="gz::sim::systems::Physics" filename="gz-sim-physics-system" />
+    <plugin name="gz::sim::systems::UserCommands" filename="gz-sim-user-commands-system" />
+    <plugin name="gz::sim::systems::SceneBroadcaster" filename="gz-sim-scene-broadcaster-system" />
+    <plugin name="gz::sim::systems::Contact" filename="gz-sim-contact-system" />
+    <plugin name="gz::sim::systems::Imu" filename="gz-sim-imu-system" />
+    <plugin name="gz::sim::systems::AirPressure" filename="gz-sim-air-pressure-system" />
+    <plugin name="gz::sim::systems::ApplyLinkWrench" filename="gz-sim-apply-link-wrench-system" />
+    <plugin name="gz::sim::systems::NavSat" filename="gz-sim-navsat-system" />
     <plugin name="gz::sim::systems::Sensors" filename="gz-sim-sensors-system">
       <render_engine>ogre2</render_engine>
     </plugin>
     <gui fullscreen="false">
-      <!-- 3D scene -->
+      
       <plugin filename="MinimalScene" name="3D View">
         <gz-gui>
           <title>3D View</title>
@@ -35,7 +35,7 @@
           <far>25000</far>
         </camera_clip>
       </plugin>
-      <!-- Plugins that add functionality to the scene -->
+      
       <plugin filename="EntityContextMenuPlugin" name="Entity context menu">
         <gz-gui>
           <property key="state" type="string">floating</property>
@@ -83,8 +83,8 @@
       <plugin filename="SelectEntities" name="Select Entities">
         <gz-gui>
           <anchors target="Select entities">
-            <line own="right" target="right"/>
-            <line own="top" target="top"/>
+            <line own="right" target="right" />
+            <line own="top" target="top" />
           </anchors>
           <property key="resizable" type="bool">false</property>
           <property key="width" type="double">5</property>
@@ -105,8 +105,8 @@
       <plugin filename="Spawn" name="Spawn Entities">
         <gz-gui>
           <anchors target="Select entities">
-            <line own="right" target="right"/>
-            <line own="top" target="top"/>
+            <line own="right" target="right" />
+            <line own="top" target="top" />
           </anchors>
           <property key="resizable" type="bool">false</property>
           <property key="width" type="double">5</property>
@@ -125,8 +125,8 @@
           <property type="double" key="z">1</property>
           <property type="string" key="state">floating</property>
           <anchors target="3D View">
-            <line own="left" target="left"/>
-            <line own="bottom" target="bottom"/>
+            <line own="left" target="left" />
+            <line own="bottom" target="bottom" />
           </anchors>
         </gz-gui>
         <play_pause>1</play_pause>
@@ -143,8 +143,8 @@
           <property type="double" key="z">1</property>
           <property type="string" key="state">floating</property>
           <anchors target="3D View">
-            <line own="right" target="right"/>
-            <line own="bottom" target="bottom"/>
+            <line own="right" target="right" />
+            <line own="bottom" target="bottom" />
           </anchors>
         </gz-gui>
         <sim_time>1</sim_time>
@@ -152,17 +152,11 @@
         <real_time_factor>1</real_time_factor>
         <iterations>1</iterations>
       </plugin>
-      <plugin name="Entity tree" filename="EntityTree"/>
+      <plugin name="Entity tree" filename="EntityTree" />
     </gui>
     <gravity>0 0 -9.8</gravity>
     <magnetic_field>6e-06 2.3e-05 -4.2e-05</magnetic_field>
-    <atmosphere type="adiabatic"/>
-    <scene>
-      <grid>false</grid>
-      <ambient>0.4 0.4 0.4 1</ambient>
-      <background>0.7 0.7 0.7 1</background>
-      <shadows>true</shadows>
-    </scene>
+    <atmosphere type="adiabatic" />
     <model name="ground_plane">
       <static>true</static>
       <link name="link">
@@ -175,10 +169,10 @@
           </geometry>
           <surface>
             <friction>
-              <ode/>
+              <ode />
             </friction>
-            <bounce/>
-            <contact/>
+            <bounce />
+            <contact />
           </surface>
         </collision>
         <visual name="visual">
@@ -189,9 +183,9 @@
             </plane>
           </geometry>
           <material>
-            <ambient>0.8 0.8 0.8 1</ambient>
-            <diffuse>0.8 0.8 0.8 1</diffuse>
-            <specular>0.8 0.8 0.8 1</specular>
+            <ambient>0.30 0.38 0.20 1</ambient>
+            <diffuse>0.42 0.55 0.27 1</diffuse>
+            <specular>0.02 0.02 0.02 1</specular>
           </material>
         </visual>
         <pose>0 0 0 0 -0 0</pose>
@@ -238,15 +232,46 @@
       <longitude_deg> 8.546163739800146</longitude_deg>
       <elevation>0</elevation>
     </spherical_coordinates>
-  
-    <!-- ================= kamikaze hedefi ================= -->
-    <!-- taban kodun qr_pad modeli. 2x2 m QR + dort tarafta 45 derece,
-         3 m plakalar (sartname s.17). ENU: X=Dogu, Y=Kuzey. -->
-    <include>
+  <scene>
+      <sky>
+        <clouds><speed>8</speed></clouds>
+      </sky>
+      <grid>false</grid>
+      <ambient>0.6 0.6 0.6 1</ambient>
+      <background>0.55 0.70 0.90 1</background>
+      <shadows>true</shadows>
+    </scene><light type="directional" name="sun_fill">
+      <cast_shadows>false</cast_shadows>
+      <pose>200 200 300 0 0 0</pose>
+      <diffuse>0.35 0.35 0.40 1</diffuse>
+      <specular>0.10 0.10 0.10 1</specular>
+      <attenuation>
+        <range>2000</range><constant>1</constant>
+        <linear>0</linear><quadratic>0</quadratic>
+      </attenuation>
+      <direction>-0.3 -0.3 -0.9</direction>
+    </light><include>
+      <uri>model://grass_field</uri>
+      <name>grass_field</name>
+      <pose>500 0 0 0 0 0</pose>
+    </include><include>
       <uri>model://qr_pad</uri>
       <name>qr_pad</name>
       <pose>500 0 0 0 0 0</pose>
-    </include>
-
-</world>
+    </include><model name="diag_cam">
+      <static>true</static>
+      <pose>458 0 60 0 0.9599 0</pose>
+      <link name="link">
+        <sensor name="diag" type="camera">
+          <camera>
+            <horizontal_fov>0.8954</horizontal_fov>
+            <image><width>1920</width><height>1080</height></image>
+            <clip><near>0.1</near><far>3000</far></clip>
+          </camera>
+          <always_on>1</always_on>
+          <update_rate>10</update_rate>
+          <topic>diag_cam</topic>
+        </sensor>
+      </link>
+    </model></world>
 </sdf>
