@@ -11,6 +11,9 @@ qr_target.sdf uretici.
 import sys
 import xml.etree.ElementTree as ET
 
+# ⚠️ HFOV TEK KAYNAKTAN OKUNUR - elle kopyalanmaz. Gerekcesi cam_params.py'de.
+from cam_params import hfov_rad
+
 
 def frag(xml_text):
     return ET.fromstring(xml_text)
@@ -95,6 +98,8 @@ def main(src, dst):
     # --- 5) TANI KAMERASI: bilinen pozdan QR'a bakan bagimsiz kamera ---
     # Ucagin kamerasi calismiyorsa sorunun montajda mi sahnede mi oldugunu
     # ayirt etmek icin. 60 m irtifa, 55 derece bakis -> yatay 42 m.
+    # HFOV ucagin kamerasiyla AYNI olmali, yoksa tani temsil etmez.
+    hfov = hfov_rad()
     world.append(frag("""
     <model name="diag_cam">
       <static>true</static>
@@ -102,7 +107,7 @@ def main(src, dst):
       <link name="link">
         <sensor name="diag" type="camera">
           <camera>
-            <horizontal_fov>0.8954</horizontal_fov>
+            <horizontal_fov>%s</horizontal_fov>
             <image><width>1920</width><height>1080</height></image>
             <clip><near>0.1</near><far>3000</far></clip>
           </camera>
@@ -111,8 +116,9 @@ def main(src, dst):
           <topic>diag_cam</topic>
         </sensor>
       </link>
-    </model>"""))
+    </model>""" % hfov))
     print("  diag_cam eklendi @ (458, 0, 60) pitch=+55 -> /diag_cam")
+    print("  diag_cam HFOV = %s rad (model.sdf'ten okundu)" % hfov)
 
     tree.write(dst, encoding="utf-8", xml_declaration=True)
     print("  yazildi: %s" % dst)

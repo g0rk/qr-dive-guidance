@@ -19,21 +19,76 @@ cd ~/PX4-Autopilot && make px4_sitl gz_rc_cessna_cam
 | `worlds/qr_target.sdf` | `default.sdf` + `qr_pad` @ (500 m doğu, 0) |
 | `airframes/4009_gz_rc_cessna_cam` | Dünya ve model seçimi |
 
-## Kamera parametreleri — dikkat
+## Kamera parametreleri — ✅ artık varsayım değil
+
+**Gerçek donanım doğrulandı (2026-08-05):**
+
+| | Değer |
+|---|---|
+| Model | **DFM 37UR0234-ML** (The Imaging Source) |
+| Sensör | onsemi **AR0234CS** CMOS |
+| Format | **1/2.6"** |
+| Çözünürlük | 1920 × 1200 |
+| Piksel boyutu | 3.0 µm |
+| Efektif alan (üretici) | 5.62 mm × 3.20 mm |
+| Lens | 6 mm |
+
+Önceki oturum *"6mm + 2MP → 1/2.6" (AR0234)"* diye **varsaymıştı — varsayım doğru
+çıktı.** Dolayısıyla eski menzil/geometri ölçümlerinin hiçbiri geçersiz olmadı.
 
 `nose_cam` PX4'ün `mono_cam`'inden **bilerek farklı**:
 
 | | PX4 mono_cam | nose_cam |
 |---|---|---|
-| HFOV | 1.74 rad = 99.7° | **0.8954 rad = 51.3°** |
+| HFOV | 1.74 rad = 99.7° | **0.8950 rad = 51.28°** |
 | Çözünürlük | 640×480 | **1920×1080** |
 
-51.3° = 6 mm lens + 1/2.6" sensör (AR0234, 5.76 mm yatay).
-**⚠️ Sensör boyutu varsayım.** Farklıysa:
-- 1/3" veya 1/2.9" (4.8 mm) → 43.6° → `0.7610` rad
-- 1/1.8" (7.2 mm) → 61.9° → `1.0804` rad
+### HFOV nereden geliyor
 
-Bu değer dalış geometrisini ve QR decode menzilini **doğrudan** belirliyor.
+```
+HFOV = 2 · arctan( sensör_genişliği / (2 · odak_uzaklığı) )
+     = 2 · arctan( 5.76 / (2 · 6) ) = 51.28° = 0.8950 rad
+```
+
+### ⚠️ Üreticinin sayfası kendi içinde çelişkili
+
+| | Piksel sayısı × 3.0 µm | Üreticinin dediği |
+|---|---|---|
+| Yatay | 1920 × 3.0 µm = **5.76 mm** | 5.62 mm |
+| Dikey | 1200 × 3.0 µm = **3.60 mm** | 3.20 mm |
+| Dikey (1080 satır) | 1080 × 3.0 µm = **3.24 mm** | ← "3.20" buna çok daha yakın |
+
+Yani "efektif alan" muhtemelen tam 1920×1200 dizisini tarif etmiyor. Renderer
+iğne deliği (pinhole) modeli piksel geometrisiyle tutarlı olmalı: gz 1920 sütun
+örnekliyor, her sütun 3.0 µm → **5.76 mm** kullanıldı.
+
+**Belirsizliğin büyüklüğü ve yönü:**
+
+| Sensör genişliği | HFOV |
+|---|---|
+| 5.76 mm | 51.28° |
+| 5.62 mm | 50.19° |
+
+Fark yalnızca **1.09° (%2.1)**. Geniş HFOV = aynı 1920 piksele daha çok dünya
+sığar = hedef daha **küçük** görünür. Yani 51.28° kullanmak, gerçek 50.19° ise,
+QR'ı %2.1 küçük gösterir → decode menzilini **olduğundan kötü** tahmin ederiz.
+**Hata güvenli yönde.** Ölçülen 40 m decode eşiği 10 m'lik basamaklarla bulunduğu
+için bundan etkilenmiyor.
+
+> **Kesin cevap ölçümle gelir:** kamera elde olunca satranç tahtası +
+> OpenCV `calibrateCamera`. Datasheet tartışması değil, kalibrasyon.
+
+### Neden 1200 değil 1080 satır
+
+Sensör 1920×1200 = **16:10**. Şartname s.12 yalnızca **4:3, 5:4, 16:9**
+oranlarına izin veriyor — **16:10 listede yok.** Hakem videosu 16:9 olmak
+zorunda, o yüzden 1080 satıra kırpılıyor (üstten ve alttan 60'şar satır).
+
+Sonucu dikey görüş alanı:
+```
+VFOV = 2 · arctan( tan(HFOV/2) · 1080/1920 ) = 30.22°
+```
+Tam sensör kullanılabilseydi 33.40° olurdu — **kullanamıyoruz.**
 
 ## Hedef koordinatı
 

@@ -6,6 +6,9 @@ import sys
 
 SIM = os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 sys.path.insert(0, SIM)
+sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
+
+import cam_params  # kamera parametrelerinin tek kaynagi (model.sdf'i okur)
 
 import logging
 logging.disable(logging.WARNING)
@@ -84,7 +87,10 @@ def main():
         rclpy.spin_once(node, timeout_sec=0.2)
         t += 0.2
 
-    ppd = 1920 / math.degrees(0.8954)
+    # ⚠️ Eskiden `1920 / math.degrees(0.8954)` diye SABIT yaziliydi. Kamera
+    #    parametresi model.sdf'te degisirse bu tablo sessizce yanlis "teorik
+    #    px" uretirdi. Artik tek kaynaktan okunuyor (cam_params.py).
+    ppd = cam_params.pixels_per_degree()
     print()
     print("=" * 74)
     print("  QR DECODE - IRTIFAYA GORE  (gz render, gercek algi kodu)")
