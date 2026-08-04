@@ -4,7 +4,16 @@
 import math
 
 # Connection
-SYSTEM_ADDRESS = "udp://:14541"
+#
+# ⚠️ OLCULDU 2026-08-05: eskiden 14541'di ve PX4 SITL'e HIC BAGLANMIYORDU.
+#    PX4 SITL (instance 0) onboard MAVLink'i su sekilde aciyor:
+#        mavlink mode: Onboard, ... on udp port 14580 remote port 14540
+#    yani telemetriyi 14540'a GONDERIYOR; MAVSDK o portu DINLEMELI.
+#    Iki port da denendi (tools yerine dogrudan MAVSDK ile):
+#        udp://:14540 -> BAGLANDI, telemetri akti (rel_alt, lat okundu)
+#        udp://:14541 -> connect() zaman asimi, hicbir paket gelmedi
+#    14541 ile main.py baglantida sonsuza kadar beklerdi.
+SYSTEM_ADDRESS = "udp://:14540"
 
 # FSM Timing
 LOOP_HZ = 20.0  # FSM tick rate (Hz)
@@ -15,21 +24,34 @@ AUTO_START = True
 # Target coordinates
 #
 # SIMULASYON HEDEFI. gz dunyasindaki qr_pad'in konumuna karsilik gelir:
-#   dunya : qr_target.sdf, qr_pad @ (X=500 m dogu, Y=0)
-#   home  : PX4 gz SITL varsayilani, Zurih 47.397742 / 8.545594
-#   -> 500 m dogu = +0.0066354 boylam
+#   dunya : qr_target.sdf, qr_pad @ (X=500 m dogu, Y=0)   [ENU: X=Dogu, Y=Kuzey]
+#   orijin: dunyanin <spherical_coordinates> etiketi
+#           47.397971057728974 / 8.546163739800146
+#   -> 500 m dogu  =>  47.3979711 / 8.5527992
 #
-# ⚠️ ESKI DEGER (47.397971 / 8.546164) home'a sadece ~50 m uzakti.
-#    APPROACH_GHOST_DISTANCE_M 400 m; hayalet nokta hedefin 400 m
-#    arkasina konuyor, yani yaklasma hattinin oturmasi icin hedefin
-#    kalkis noktasindan makul uzakta olmasi gerekiyor. 50 m'de ucak
-#    daha donusunu tamamlamadan hedefi gecerdi.
+# ⚠️ IKI FARKLI "HOME" VAR - KARISTIRILMASI 50 m HATA VERIYOR (olculdu):
+#
+#     1) PX4'un belgelenmis varsayilani  47.397742 / 8.545594
+#        (PX4_HOME_LAT / PX4_HOME_LON; gz DISINDAKI simulatorlerde gecerli)
+#     2) gz DUNYA DOSYASININ kendi <spherical_coordinates> etiketi
+#        47.397971 / 8.546164   <- gz simulatorken GECERLI OLAN BU
+#
+#    Ikisi arasinda 49.9 m var. Onceki deger (47.3977420 / 8.5522294)
+#    (1)'e 500 m eklenerek turetilmisti, yani pad'in 49.9 m GUNEYBATISINDA
+#    bir noktaya isaret ediyordu:
+#        dunya orijininden config hedefine : 457.8 m @ 93.2 derece
+#        dunya orijininden gercek pad'e    : 500.0 m @ 90.0 derece
+#    QR pad 2 m x 2 m; 49.9 m hata kenarin 25 KATI -> ucak bos cimene dalardi.
+#
+#    Dogrulamasi tests/test_hedef_koordinati.py'de kilitlendi: test dunya
+#    SDF'ini okuyup bu iki sayiyi yeniden turetiyor. Dunya degisirse test
+#    duser, sessizce ayrisamaz.
 #
 # ⚠️ GERCEK GOREVDE bu deger sunucudan gelir (/api/qr_koordinati);
 #    mission.target_lat_lon() once YKI'den gelen degeri kullanir,
 #    burasi yalnizca yedek.
-TARGET_LATITUDE_DEG = 47.3977420
-TARGET_LONGITUDE_DEG = 8.5522294
+TARGET_LATITUDE_DEG = 47.3979711
+TARGET_LONGITUDE_DEG = 8.5527992
 
 # Loiter Align
 LOITER_EXIT_ANGLE_THRESHOLD_DEG = 5.0   # max heading error to count a good tick
