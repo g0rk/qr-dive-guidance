@@ -13,8 +13,23 @@ LOOP_HZ = 20.0  # FSM tick rate (Hz)
 AUTO_START = True
 
 # Target coordinates
-TARGET_LATITUDE_DEG = 47.397971
-TARGET_LONGITUDE_DEG = 8.546164
+#
+# SIMULASYON HEDEFI. gz dunyasindaki qr_pad'in konumuna karsilik gelir:
+#   dunya : qr_target.sdf, qr_pad @ (X=500 m dogu, Y=0)
+#   home  : PX4 gz SITL varsayilani, Zurih 47.397742 / 8.545594
+#   -> 500 m dogu = +0.0066354 boylam
+#
+# ⚠️ ESKI DEGER (47.397971 / 8.546164) home'a sadece ~50 m uzakti.
+#    APPROACH_GHOST_DISTANCE_M 400 m; hayalet nokta hedefin 400 m
+#    arkasina konuyor, yani yaklasma hattinin oturmasi icin hedefin
+#    kalkis noktasindan makul uzakta olmasi gerekiyor. 50 m'de ucak
+#    daha donusunu tamamlamadan hedefi gecerdi.
+#
+# ⚠️ GERCEK GOREVDE bu deger sunucudan gelir (/api/qr_koordinati);
+#    mission.target_lat_lon() once YKI'den gelen degeri kullanir,
+#    burasi yalnizca yedek.
+TARGET_LATITUDE_DEG = 47.3977420
+TARGET_LONGITUDE_DEG = 8.5522294
 
 # Loiter Align
 LOITER_EXIT_ANGLE_THRESHOLD_DEG = 5.0   # max heading error to count a good tick
@@ -28,7 +43,18 @@ APPROACH_GHOST_DISTANCE_M = 400.0       # ghost waypoint offset behind target
 #    bunu MAVSDK sinirinda AMSL'e cevirir. Eskiden dogrudan goto_location()'a
 #    veriliyordu (AMSL bekler) ve deniz seviyesinde olmayan her sahada
 #    dalis hic tetiklenmiyordu.
-APPROACH_SAFE_ALTITUDE_M = 100.0
+#
+# ⚠️ DALIS ESIGINDEN YUKSEK OLMALI. Eskiden ikisi de 100.0'di, yani HIC PAY
+#    YOKTU: approach_state dalis izni icin rel_alt >= DIVE_MIN_ENTRY_ALTITUDE_M
+#    ariyor; ucak 100 m'ye birkac santim kala tetik mesafesine girerse dalis
+#    reddedilip ABORT'a dusuyordu. 20 m pay birakildi.
+APPROACH_SAFE_ALTITUDE_M = 120.0
+
+# Kalkis irtifasi. ⚠️ Eskiden takeoff_state.py:30'da KODA GOMULUYDU
+# (`self._target_alt_m = 100`), config'de yoktu. Dalis zinciriyle bagli
+# oldugu icin buraya tasindi: bu uc deger birlikte dusunulmeli
+#   TAKEOFF_ALTITUDE_M >= APPROACH_SAFE_ALTITUDE_M > DIVE_MIN_ENTRY_ALTITUDE_M
+TAKEOFF_ALTITUDE_M = 120.0
 
 # Dive (Safety Critical)
 #

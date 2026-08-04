@@ -27,7 +27,11 @@ class TakeoffState(BaseState):
 
     def __init__(self) -> None:
         super().__init__()
-        self._target_alt_m = 100
+        # ⚠️ Eskiden koda gomuluydu (100). Dalis zinciriyle BAGLI oldugu icin
+        #    config'e tasindi: sartname s.18 dalisa >=100 m'den baslamayi sart
+        #    kosuyor (DIVE_MIN_ENTRY_ALTITUDE_M) ve yaklasma da bu irtifada
+        #    yapiliyor (APPROACH_SAFE_ALTITUDE_M). Ucu birlikte degismeli.
+        self._target_alt_m = config.TAKEOFF_ALTITUDE_M
         self._arm_requested: bool = False
         self._takeoff_requested: bool = False
         self._arm_request_time: float = 0.0

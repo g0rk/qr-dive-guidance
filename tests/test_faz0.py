@@ -148,16 +148,37 @@ def test_p2():
         raised = True
     check("telemetri yokken hata veriyor (sessizce 0 varsaymiyor)", raised)
 
-    # Asil regresyon: 20 m rakimli sahada dalis kapisi
-    saha = 20.0
-    check("20 m rakimli sahada dalis kapisi ACILIYOR",
+    # --- ASIL REGRESYON: saha rakimi dalis kapisini kapatiyor mu ---
+    #
+    # Test SAYIYA BAGLI OLMASIN: eski kodu bozacak saha rakimi, config
+    # degerlerinden turetiliyor. Yaklasma irtifasi ile dalis esigi
+    # arasindaki paydan buyuk her rakim eski kodu ABORT'a dusururdu.
+    pay = config.APPROACH_SAFE_ALTITUDE_M - config.DIVE_MIN_ENTRY_ALTITUDE_M
+    kritik_saha = pay + 10.0        # payi asan ilk rakim
+
+    check("YENI kod: saha rakimi ne olursa olsun kapi ACIK",
           config.APPROACH_SAFE_ALTITUDE_M >= config.DIVE_MIN_ENTRY_ALTITUDE_M,
-          "rel=%.0f >= %.0f" % (config.APPROACH_SAFE_ALTITUDE_M,
-                                config.DIVE_MIN_ENTRY_ALTITUDE_M))
-    check("eski kod ayni sahada ABORT ederdi (kanit)",
-          (config.APPROACH_SAFE_ALTITUDE_M - saha) < config.DIVE_MIN_ENTRY_ALTITUDE_M,
-          "rel=%.0f < %.0f" % (config.APPROACH_SAFE_ALTITUDE_M - saha,
-                               config.DIVE_MIN_ENTRY_ALTITUDE_M))
+          "goreli komut -> rel=%.0f >= esik=%.0f"
+          % (config.APPROACH_SAFE_ALTITUDE_M, config.DIVE_MIN_ENTRY_ALTITUDE_M))
+
+    check("ESKI kod: %.0f m rakimli sahada ABORT ederdi" % kritik_saha,
+          (config.APPROACH_SAFE_ALTITUDE_M - kritik_saha) < config.DIVE_MIN_ENTRY_ALTITUDE_M,
+          "AMSL komutu -> rel=%.0f < esik=%.0f"
+          % (config.APPROACH_SAFE_ALTITUDE_M - kritik_saha,
+             config.DIVE_MIN_ENTRY_ALTITUDE_M))
+
+    # Zurih (PX4 SITL varsayilani) her halukarda bozardi
+    check("ESKI kod: Zurih'te (488 m) yerin altina komut ederdi",
+          (config.APPROACH_SAFE_ALTITUDE_M - 488.0) < 0,
+          "rel=%.0f m" % (config.APPROACH_SAFE_ALTITUDE_M - 488.0))
+
+    # Irtifa zincirinin tutarliligi
+    check("irtifa zinciri tutarli (kalkis >= yaklasma > dalis esigi)",
+          config.TAKEOFF_ALTITUDE_M >= config.APPROACH_SAFE_ALTITUDE_M
+          > config.DIVE_MIN_ENTRY_ALTITUDE_M,
+          "%.0f >= %.0f > %.0f" % (config.TAKEOFF_ALTITUDE_M,
+                                   config.APPROACH_SAFE_ALTITUDE_M,
+                                   config.DIVE_MIN_ENTRY_ALTITUDE_M))
     print()
 
 
