@@ -1,46 +1,239 @@
-# flyMission
+# fly-onboard-sim
 
-Teknofest Savaşan İHA yarışması için geliştirilen otonom uçuş kontrol yazılımı.
+Sabit kanat bir İHA'yı, yerdeki 2×2 m'lik bir QR hedefine otonom olarak
+dalıp kodu okuyacak ve güvenle çıkacak şekilde yöneten uçuş görev yazılımı —
+ve onu doğrulayan PX4 + Gazebo simülasyon ortamı.
 
-## Genel Bakış
+TEKNOFEST 2026 Savaşan İHA yarışmasının **Kamikaze görevi** için geliştirildi.
 
-Proje, bir sabit kanat İHA'yı MAVSDK üzerinden PX4/ArduPilot tabanlı bir otopilotla haberleştirerek görev boyunca otonom şekilde yöneten, çok süreçli (multiprocessing) bir Python uygulamasıdır. Sistem; yer istasyonuyla haberleşme, görüntü tabanlı algılama ve görev/uçuş mantığı olmak üzere birbirinden bağımsız süreçler (process) halinde çalışır ve bu süreçler aralarında kuyruk (queue) yapıları üzerinden veri alışverişi yapar.
+> **Bu deponun ayırt edici yanı ölçüm.** Her karar bir sayıya dayanıyor ve o
+> sayının nereden geldiği kodun içinde yazılı. Aşağıdaki hataların çoğu
+> *sessizdi*: program çalışıyor, hata vermiyor, görev başarısız oluyordu.
+
+---
 
 ## Mimari
 
-Sistem üç ana süreçten oluşur:
+Üç bağımsız süreç, aralarında kuyruklarla haberleşiyor:
 
-- **Communication Process (`processes/ground_communication.py`)**
-  Yer istasyonu (GUI/istemci) ile İHA arasında WebSocket üzerinden çift yönlü haberleşmeyi sağlar. Yer istasyonundan gelen komutları görev sürecine iletir, görev durumunu ve telemetriyi yer istasyonuna geri gönderir.
+| Süreç | Dosya | İşi |
+|---|---|---|
+| **Communication** | `processes/ground_communication.py` | Yer istasyonuyla WebSocket; komut alır, durum yayınlar |
+| **Perception** | `processes/perception.py` | Kamera karesinden QR tespiti, 4 köşe çıkarımı, AV içi/dışı kararı |
+| **Mission Controller** | `processes/mission_controller.py` | 20 Hz'de koşan sonlu durum makinesi (FSM) |
 
-- **Perception Process (`processes/perception.py`)**
-  Kamera görüntüsü üzerinden algılama işlemlerini yürüten ayrı bir süreçtir (QR kod ve/veya YOLO tabanlı nesne algılama). Algılama sonuçlarını görev sürecine bir kuyruk üzerinden aktarır.
+Görev zinciri:
 
-- **Mission Controller (`processes/mission_controller.py`)**
-  Görevin ana beynidir. Sabit bir döngü frekansında (`config.LOOP_HZ`) çalışan bir sonlu durum makinesi (Finite State Machine / FSM) işletir. Her tur (tick) telemetriyi okur, güvenlik kontrollerini çalıştırır ve aktif duruma göre uçağa komut gönderir.
+```
+IDLE ──(komut: takeoff)──► TAKEOFF ──otomatik──► HOLD ──(komut: align)──► LOITER_ALIGN
+                                                                              │
+                                                                          otomatik
+                                                                              ▼
+        HOLD ◄──otomatik── PULL_UP ◄──otomatik── DIVE ◄──otomatik── APPROACH
+```
 
-Bu üç süreç, `main.py` içinde başlatılır ve program kapanırken hepsi düzenli şekilde sonlandırılır.
+Dışarıdan yalnızca iki komut gerekiyor (`takeoff`, `align`); gerisi otonom.
 
-## Yardımcı Modüller
+---
 
-- **`vehicle.py`** — MAVSDK üzerinden otopilota giden tüm komutların (arm, kalkış, konuma git, RTL, hold, offboard attitude komutu vb.) tek noktadan yönetildiği katman. Durum (state) sınıfları otopilotla asla doğrudan konuşmaz, sadece bu katman üzerinden.
-- **`telemetry.py`** — Otopilottan akan konum, hız, irtifa, yönelim gibi verilerin merkezi olarak tutulduğu veri deposu.
-- **`safety.py`** — Telemetri verisini yapılandırılmış güvenlik limitlerine karşı denetleyen, her kontrolde sonucu net (geçti/geçmedi + sebep) döndüren modül.
-- **`utils/command_router.py`** — Yer istasyonundan/yetkili kaynaktan gelen komutları doğrulayıp ilgili duruma yönlendiren yapı.
-- **`utils/geo_utils.py`** — Yön (bearing), yer izi açısı, yer hızı gibi coğrafi hesaplamalar için bağımsız yardımcı fonksiyonlar.
-- **`logger.py`** — Konsola renkli/okunabilir log basan, dosyaya da loglama desteği olan ortak log altyapısı.
-- **`config.py`** — Bağlantı adresi, döngü frekansı gibi genel sistem parametrelerinin tanımlandığı merkezi ayar dosyası.
+## Dalış geometrisi — işin özü
 
-## Uçuş Durum Makinesi (FSM)
+Kamera burunda ve **gövde ekseniyle paralel** (şartname s.10 böyle istiyor).
+Yani aşağı değil, **burnun baktığı yere** bakıyor. Bu tek kısıt her şeyi
+belirliyor.
 
-Görev mantığı, `states/` klasöründe her biri kendi dosyasında tanımlı ayrık durumlardan oluşur (örn. bekleme, kalkış, loiter/bekleme modu, görev-özel manevra durumları, acil durum/abort). Tüm durumlar ortak bir soyut temel sınıftan (`states/base_state.py`) türetilir ve `on_enter` / `update` / `on_exit` yaşam döngüsü metotlarını uygular. Hangi durumdan hangi duruma geçileceği `mission_controller.py` ve `command_router.py` tarafından yönetilir.
+**QR'ın dört tarafı 45° eğimli, 3 m plakalarla çevrili** — düz uçuşta
+okunmasın diye. QR'ın *tamamını* görmek için en az 45° dik açıyla bakmak
+gerekiyor. 55° dalış seçildi (plaka sınırına 10° pay).
 
-`AbortState`, sistemdeki acil durdurma mekanizmasıdır: tetiklendiğinde otopilota RTL (Return to Launch) komutu göndererek görevi güvenli şekilde sonlandırır.
+### Dalış tetik mesafesi neden 108 m
 
-## Kamera Köprüsü (`ros_camera.py`)
+İlk türetme `120 / tan(55°) = 84 m` idi ve **yanlıştı**. İki sebepten:
 
-ROS 2 tarafında yayınlanan kamera görüntüsünü alıp, `Perception Process`'in kullanabileceği şekilde bir TCP soketi üzerinden aktaran bağımsız bir köprü betiğidir. Bu sayede kamera kaynağı (gerçek kamera, simülasyon vb.) ile algılama süreci birbirinden ayrıştırılmış olur. Bu modül simülasyon için oluşturulmuştur. Son kullanımda kameradan görüntü alacak şekilde düzeltilecektir.
+1. **Komut edilen pitch, gerçekleşen yol açısı değildir.** Sabit kanatta
+   kanat taşıma üretmeye devam eder; uçak burnunun gösterdiğinden daha yatık
+   bir yol izler. Uçuş kaydından geri çözüldü: 120 m'den 40 m'ye inerken
+   80 m düşüp **80.1 m yatay yol** alınmış → gerçekleşen yol açısı **45°**.
+2. Formül uçağın hedefe **vardığı** anı hesaplıyordu. Oysa hedefin, uçak
+   decode irtifasındayken kameranın **önünde** olması gerekiyor.
 
-## Simülasyon Notu
+Doğru türetme iki parçalı:
 
-Bu projede kamera/algılama tarafı, gerçek donanım yerine simülasyon ortamına bağlanacak şekilde de çalıştırılabilir; bu entegrasyon ayrıca düzenlenip netleştirilecektir.
+```
+d_bore = decode_irtifası / tan(pitch)             = 40 / tan(55°) = 28.0 m
+d_dive = (giriş − decode) / tan(gerçek_yol_açısı) = 80 / tan(45°) = 80.1 m
+TETİK  = 108.0 m
+```
+
+Sonuç — hedef dalış boyunca **kesintisiz kadrajda**:
+
+| İrtifa | Kalan yatay | Görüş hattı | Kadrajda |
+|---|---|---|---|
+| 120 m | 108.0 m | 48.0° | ✅ |
+| 80 m | 68.0 m | 49.6° | ✅ |
+| **40 m** | **28.0 m** | **55.0°** | ✅ tam merkez |
+| 30 m | 18.0 m | 59.0° | ✅ |
+
+Yanlış tetikle uçak 40 m'de hedefe 3.9 m kala varıyordu; kamera ise
+önündeki 17.2–54.0 m'yi gördüğü için hedef kadrajın altında kalıyordu.
+**4879 karede 0 tespit.** Düzeltmeden sonra QR ilk kez okundu.
+
+---
+
+## QR'ın dört köşesi
+
+`pyzbar` bir QR bulduğunda iki şey döndürür: `rect` (eksen hizalı
+sınırlayıcı kutu) ve `polygon` (gerçek dört köşe). Taban kod `polygon`'u
+atıyordu.
+
+Eğik bakışta QR karede kare değil, **eğik bir dörtgen** görünür. Kutuya
+sıkıştırmanın maliyeti ölçüldü:
+
+| | Kutunun şişmesi |
+|---|---|
+| Tam karşıdan | 1.00× |
+| Perspektif | 1.02× |
+| 15° dönme | 1.50× |
+| **45° dönme** | **2.00×** |
+
+Şişmeyi yapan **dönme**, perspektif değil.
+
+> **Bir iddia ölçüldü ve yanlış çıktı.** "Kutu QR'dan 2 kat büyük olduğu için
+> geçerli bir vuruş *AV dışında* sanılabilir" denmişti. Yanlış: Hedef Vuruş
+> Alanı **eksen hizalı bir dikdörtgen**, ve bir dörtgenin böyle bir
+> dikdörtgenin içinde olması ⟺ dört köşesinin de içinde olması ⟺ köşelerin
+> min/max'ının içinde olması — ki o da **kutunun kendisi**. İki test özdeş.
+> 41 konum/açı denendi, **sıfır ayrışma**.
+>
+> Dört köşenin gerçek değeri başka yerde: **perspektif-doğru merkez**
+> (köşegen kesişimi, kutu ortası değil), **`solvePnP` ile menzil/poz**, ve HUD.
+
+Merkez farkı da ölçüldü: perspektifsiz 0.0 px · gerçekçi dalış **2.8 px** ·
+agresif açı 9.2 px. 2.8 px = 0.075° = 30 m'den yerde 4 cm.
+
+---
+
+## Ölçümler
+
+**QR decode eşiği** (gz render'ı + gerçek algı kodu, V1 doku, 55° dalış,
+51.28° HFOV, 1920×1080):
+
+| İrtifa | Eğik menzil | Ölçülen px | Decode |
+|---|---|---|---|
+| 60 m | 73.2 m | — | 0/4 |
+| 50 m | 61.0 m | — | 0/4 |
+| **40 m** | 48.8 m | **70** | **4/4** ← eşik |
+| 30 m | 36.6 m | 93 | 4/4 |
+| 20 m | 24.4 m | 139 | 4/4 |
+
+**Pull-up irtifa kaybı** (5 koşum): 14.93 / 15.55 / 15.84 / 16.17 / 16.46 m.
+Bu yüzden pull-up tabanı 20 m'den **30 m**'ye çıkarıldı — 20 m'de uçak
+2.87–4.00 m'ye kadar iniyordu, ki simülasyonda çarpmasa da gerçekte sıfır
+paydır.
+
+**Uçtan uca sonuç** (kamera zinciri açık, 5 koşum): QR **41.7–46.6 m**
+arasında okundu, **5/5 başarı**, hepsinde AV'nin tamamen içinde.
+
+---
+
+## QR okunduktan sonra devam
+
+İlk geçerli tespitte hemen çıkılınca uçuş boyunca **yalnızca 1** çözülebilir
+kare toplanıyordu — ve o karede QR 70 px, yani decode eşiğinin tam üstü.
+Şartname tek kare istiyor, ama sıfır marjla çalışmak sahada kırılgan.
+
+Şartname s.20: değerlendirme penceresi **dalış bitişinin ±1 saniyesi**.
+Alçalma ~32 m/s → **1 saniye = 32 metre irtifa**. Yani çözülebilen tüm
+kareler zaten pencerenin içinde; devam etmenin maliyeti yok.
+
+`KAMIKAZE_QR_CONTINUE_ALTITUDE_M = 35.0` — zamana değil **irtifaya** bağlı,
+çünkü bağlayıcı kısıt bir irtifa (minimum uçuş irtifası) ve zaman komutunun
+irtifa maliyeti hıza göre değişir.
+
+| | Önce | Sonra |
+|---|---|---|
+| Geçerli kare | 1 | **12** |
+| En düşük irtifa | ~29.7 m | 19.05 / 19.08 m |
+
+---
+
+## Simülasyon
+
+```bash
+./sim/install.sh ~/PX4-Autopilot
+```
+
+`gz_bridge` bu PX4 sürümünde Gazebo'yu **kendisi başlatmaz** — gz'yi ayrı
+başlatıp `PX4_GZ_STANDALONE=1` ile px4'ü çalıştırmak gerekiyor. Gözle
+izlemek için:
+
+```bash
+bash sim/tools/izle.sh
+python3 sim/tools/komut.py takeoff
+```
+
+### Araçlar
+
+| | Ne yapar |
+|---|---|
+| `sim/tools/cam_params.py` | Kamera parametrelerinin **tek kaynağı** — `model.sdf`'ten okur |
+| `sim/tools/ucus_videosu.py` | Uçuşu MP4'e alır + **her karede tam çözünürlükte** decode raporu |
+| `sim/tools/irtifa_limiti.py` | "X metrenin altında kesintisiz kaç saniye kalındı" |
+| `sim/tools/measure_alt.py` | İrtifaya göre decode eşiği ölçümü |
+| `sim/tools/build_world.py` | Dünya üretici (XML ağacıyla — regex ile **değil**) |
+
+### Kamera
+
+**DFM 37UR0234-ML** · onsemi AR0234CS · 1/2.6" · 1920×1200 · 3.0 µm · 6 mm lens
+
+```
+HFOV = 2·arctan(5.76 / (2·6)) = 51.28°     VFOV = 30.22°
+```
+
+Sensör 1920×1200 = **16:10**, ama şartname yalnızca 4:3 / 5:4 / 16:9'a izin
+veriyor → 1920×1080'e kırpmak **zorunlu**.
+
+---
+
+## Testler
+
+```bash
+python3 -m pytest tests/ -q     # 27 fonksiyon / 97 alt-kontrol
+```
+
+Testlerin çoğu **gerçek bir hatadan sonra** yazıldı ve o hatanın nasıl
+oluştuğu testin başında anlatılıyor:
+
+- `test_hedef_koordinati.py` — hedef koordinatı sayıları elle yazmıyor,
+  **dünya SDF'inden yeniden türetiyor**. Hedef bir ara pad'in 49.9 m
+  güneybatısını gösteriyordu (iki farklı "home" karıştırılmıştı).
+- `test_durum_kurulumu.py` — her FSM durumunu **kuruyor**. `takeoff_state.py`
+  bir ara `import config` içermiyordu; uçak hiçbir koşulda kalkamıyordu ve
+  bu yalnızca bir *uyarı* olarak loglanıyordu.
+- `test_gps_gudum.py` — dalıştaki yanal düzeltmenin **işaret yönünü**
+  kilitler. Yanlış yöne yatan bir düzeltme sapmayı kapatmaz, büyütür.
+
+> `check()` fonksiyonu bir ara `assert` etmiyordu — ekranda `KALDI` yazan
+> kontrol varken pytest yeşil kalıyordu. Düzeltildi.
+
+---
+
+## Bilinen açıklar
+
+- **Sunucu saati bağlı değil** (`SERVER_TIME_OFFSET_S = 0`). Şartname s.13:
+  *"sunucu saati yazmayan ya da farklı bir saat yazan görüntüler
+  değerlendirilmeyecektir"* → üretilen kayıtlar hakem için geçersiz.
+- **Minimum uçuş irtifası henüz açıklanmadı** (şartname s.29). Dalış için
+  ölçülen süreler eleme eşiğinin (10 sn) çok altında, ama pull-up sonrası
+  seyir irtifası 50 m — limit bunun üstünde çıkarsa gözden geçirilmeli.
+- `LockEvaluator` (Savaşan görevi) ve NFZ kaçınma bu depoda yok.
+- AV yüzdeleri (%25 yatay / %10 dikey) şartname **metninde geçmiyor**,
+  yalnızca şekillerde; değer şeklin görüntüsünden ölçüldü.
+
+---
+
+## Kaynak
+
+Taban kod takım içi paylaşılan bir ilk sürümden türetilmiştir. Bu depodaki
+simülasyon ortamı, ölçüm altyapısı, dalış geometrisi ve güdüm çalışması
+sonradan eklenmiştir; commit geçmişi her adımın gerekçesini taşır.
