@@ -34,8 +34,11 @@ PASS = []
 
 
 def check(label, cond, detail=""):
+    # ⚠️ `assert` sonradan eklendi: eskiden bu fonksiyon pytest'i
+    #    DUSURMUYORDU, "KALDI" yazan kontrol varken suite yesil kaliyordu.
     PASS.append(bool(cond))
     print("  %-52s %s  %s" % (label, "GECTI" if cond else "KALDI", detail))
+    assert cond, "%s  %s" % (label, detail)
 
 
 def qr_tile(px=500):

@@ -7,7 +7,12 @@ from rich.live import Live
 import logging
 import time
 
-from utils.geo_utils import ground_speed_m_s
+from utils.geo_utils import (
+    ground_speed_m_s,
+    bearing_deg,
+    angle_error_deg,
+    distance_m,
+)
 
 from states.base_state import BaseState
 from vehicle import VehicleCommandError
@@ -64,6 +69,61 @@ class DiveState(BaseState):
         if (time.monotonic() - qr["t"]) > config.KAMIKAZE_QR_MAX_AGE_S:
             return None
         return qr
+
+    def _gps_roll(self, tel):
+        """QR yokken hedefe YANAL GUDUM: kerteriz farki -> roll (bank-to-turn).
+
+        NEDEN VAR: dalis eskiden sabit attitude tutuyordu (roll=0) ve hedefi
+        42.5 m iskaliyordu (olculdu 2026-08-05). QR pad 2x2 m oldugu icin
+        pad kadraja hic girmiyor, dolayisiyla gorsel merkezleme de devreye
+        giremiyordu - tavuk-yumurta.
+
+        Doner: (roll_cmd, kerteriz_hatasi_deg, mesafe_m) veya hesaplanamazsa
+        (None, None, None).
+
+        ⚠️ SINIRLAR: dik dalista roll, seviye ucustaki kadar dogrudan bir
+           yon degisimi uretmez - burun 55 derece asagiyken tasima vektoru
+           yatiya yakin doner. Bu yuzden kazanc ve sinir OLCUMLE
+           ayarlanmali, teoriyle degil. Ilk degerler bir baslangictir.
+        """
+        if not config.KAMIKAZE_GPS_GUIDANCE:
+            return None, None, None
+
+        # ⚠️ SAVUNMACI OKUMA. Eksik bir alan yuzunden DALISIN ORTASINDA
+        #    AttributeError firlatmak kabul edilemez: update() coker, arac
+        #    komutsuz kalir. Alan yoksa kor dalisa DUSULUR, cokulmez.
+        lat = getattr(tel, "latitude_deg", None)
+        lon = getattr(tel, "longitude_deg", None)
+        hdg = getattr(tel, "heading_deg", None)
+        if lat is None or lon is None or hdg is None:
+            return None, None, None
+
+        # Telemetri gecerli mi? 0/0 konum "Gine Korfezi" degil "veri yok"
+        # demektir; oradan kerteriz hesaplamak ucagi Afrika'ya yoneltirdi.
+        if not lat and not lon:
+            return None, None, None
+
+        mesafe = distance_m(
+            lat, lon,
+            config.TARGET_LATITUDE_DEG, config.TARGET_LONGITUDE_DEG,
+        )
+        # ⚠️ Cok yakinken kerteriz anlamsizlasir: birkac metre kala kucucuk
+        #    bir konum hatasi kerteriz'i 180 derece cevirir ve ucak son anda
+        #    sertce yatar. O bolgede duzeltme YAPILMAZ.
+        if mesafe < config.KAMIKAZE_GPS_MIN_DISTANCE_M:
+            return None, None, mesafe
+
+        hedef_kerteriz = bearing_deg(
+            lat, lon,
+            config.TARGET_LATITUDE_DEG, config.TARGET_LONGITUDE_DEG,
+        )
+        hata = angle_error_deg(hedef_kerteriz, hdg)
+        roll = _clamp(
+            hata * config.KAMIKAZE_GPS_ROLL_GAIN,
+            -config.KAMIKAZE_GPS_MAX_ROLL_DEG,
+            +config.KAMIKAZE_GPS_MAX_ROLL_DEG,
+        )
+        return roll, hata, mesafe
 
     async def on_enter(self, mission: MissionController) -> None:
         self._live.start()
@@ -147,10 +207,23 @@ class DiveState(BaseState):
             await mission._change_state(PullUpState())
             return
 
-        # 4. Attitude komutu - QR gorunuyorsa gorsel merkezleme, yoksa kor dalis
+        # 4. Attitude komutu - UC KATMANLI ONCELIK
+        #      1) QR gorunuyor      -> gorsel merkezleme (en hassas)
+        #      2) QR yok            -> GPS yanal gudum
+        #      3) telemetri de yok  -> kor dalis (eski davranis)
         roll_cmd = config.DIVE_ROLL_DEG
         pitch_cmd = config.DIVE_PITCH_DEG
         centering = "kor"
+
+        if qr is None:
+            gps_roll, kerteriz_hatasi, mesafe = self._gps_roll(tel)
+            if gps_roll is not None:
+                roll_cmd = gps_roll
+                centering = "GPS hata=%+.1f deg mesafe=%.0f m" % (
+                    kerteriz_hatasi, mesafe)
+            elif mesafe is not None:
+                # Hedefe cok yakin: kerteriz anlamsiz, duzeltme dondurulur.
+                centering = "GPS donduruldu (mesafe=%.0f m)" % mesafe
 
         if qr is not None and config.KAMIKAZE_QR_CENTERING:
             ex, ey = qr["error"]        # normalize [-1,+1]
@@ -191,7 +264,10 @@ class DiveState(BaseState):
             f"elapsed={elapsed:.1f}s "
             f"pitch={tel.pitch_deg} "
             f"v_ground={ground_speed_m_s(tel.vel_north_m_s, tel.vel_east_m_s)} m/s "
-            f"v_down={tel.vel_down_m_s} m/s"
+            f"v_down={tel.vel_down_m_s} m/s "
+            # ⚠️ Hangi katmanin surdugu LOGLANMALI: yoksa "dalis neden
+            #    iskaladi" sorusu kayittan cevaplanamaz.
+            f"| gudum={centering} roll={roll_cmd:+.1f} pitch_cmd={pitch_cmd:+.1f}"
         )
 
         self._live.update(dive_text)

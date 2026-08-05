@@ -26,13 +26,22 @@ import logging
 logging.disable(logging.CRITICAL)
 
 import config
+from utils.geo_utils import offset_lat_lon as _offset_ll
 
 PASS = []
 
 
 def check(label, cond, detail=""):
+    # ⚠️ `assert` SONRADAN EKLENDI (2026-08-05). Eskiden bu fonksiyon
+    #    yalnizca listeye ekleyip yaziyordu; pytest'i DUSURMUYORDU.
+    #    Sonuc: ekranda "KALDI" yazan bir kontrol varken pytest yine
+    #    "passed" diyordu. Gercekten oldu - GPS gudumu eklenince iki
+    #    kontrol sessizce dustu ve suite yesil kaldi.
+    #    Tam da bu projenin tekrar eden hata sinifi: kod calisir, hicbir
+    #    sey bagirmaz, sonuc yanlistir.
     PASS.append(bool(cond))
     print("  %-50s %s  %s" % (label, "GECTI" if cond else "KALDI", detail))
+    assert cond, "%s  %s" % (label, detail)
 
 
 def run(coro):
@@ -226,6 +235,19 @@ class _FakeTelD:
     vel_east_m_s = 0.0
     vel_down_m_s = 25.0
 
+    # ⚠️ KONUM ALANLARI SONRADAN EKLENDI (2026-08-05).
+    #    Dalisa GPS yanal gudumu eklenince _gps_roll bu alanlari okumaya
+    #    basladi. Sahte nesnede olmayinca test AttributeError ile dustu -
+    #    ki bu DOGRU davranisti: eksik alan gercek ucusta da dalisi
+    #    coketirdi. Kod savunmaci hale getirildi (getattr) AMA sahteyi
+    #    eksik birakmak testi anlamsizlastirirdi: "kor dalis dogru" diye
+    #    degil, "alan yok" diye gecerdi. Bu yuzden sahte GERCEGE
+    #    benzetildi: hedefin 200 m batisinda, burnu tam hedefe donuk.
+    #    Boylece kerteriz hatasi ~0 -> GPS duzeltmesi ~0.
+    latitude_deg, longitude_deg = _offset_ll(
+        config.TARGET_LATITUDE_DEG, config.TARGET_LONGITUDE_DEG, 0.0, -200.0)
+    heading_deg = 90.0     # tam doguya, yani hedefe dogru
+
 
 class _FakeVeh:
     def __init__(self):
@@ -270,11 +292,26 @@ def test_p4():
     eski_pullup = config.KAMIKAZE_PULLUP_ON_QR
     config.KAMIKAZE_PULLUP_ON_QR = False   # once yalniz merkezlemeyi olc
 
+    # ⚠️ BU KONTROLUN ANLAMI DEGISTI (2026-08-05).
+    #    Eskiden "QR yok -> roll SABIT 0" beklenirdi. Ama o davranis dalisi
+    #    hedeften 42.5 m iskalatiyordu (olculdu). Artik QR yokken GPS yanal
+    #    gudumu devrede. Sahte telemetri hedefe TAM HIZALI oldugu icin
+    #    kerteriz hatasi ~0, dolayisiyla duzeltme de ~0 - ama bu sefer
+    #    "hesaplandi ve sifir cikti", "hic hesaplanmadi" degil.
     m = _FakeMission(); d = _new_dive(); run(d.update(m))
-    check("QR yok -> kor dalis (sabit komut)",
-          m.vehicle.last[0] == config.DIVE_ROLL_DEG
+    check("QR yok, hedefe HIZALI -> duzeltme ~0",
+          abs(m.vehicle.last[0]) < 1.0
           and abs(m.vehicle.last[1] - config.DIVE_PITCH_DEG) < 1e-9,
           "roll=%+.1f pitch=%+.1f" % m.vehicle.last[:2])
+
+    # QR yok ama hedef SAGDA -> GPS gudumu saga yatirmali.
+    # Bu, 42.5 m'lik iskalamayi kapatan mekanizmanin ta kendisi.
+    m = _FakeMission()
+    _FakeTelD.heading_deg = 0.0            # burun kuzeye, hedef doguda kalir
+    d = _new_dive(); run(d.update(m))
+    check("QR yok, hedef SAGDA -> GPS saga yatiriyor",
+          m.vehicle.last[0] > 1.0, "roll=%+.1f" % m.vehicle.last[0])
+    _FakeTelD.heading_deg = 90.0           # geri al
 
     m = _FakeMission(); m.qr_result = _qr(ex=+0.5); d = _new_dive(); run(d.update(m))
     check("QR SAGDA -> POZITIF roll (saga yat)", m.vehicle.last[0] > 0,
@@ -304,17 +341,27 @@ def test_p4():
     m = _FakeMission()
     m.qr_result = _qr(ex=0.9, age=config.KAMIKAZE_QR_MAX_AGE_S + 0.3)
     d = _new_dive(); run(d.update(m))
-    check("BAYAT QR yok sayiliyor -> kor dalisa donuyor",
-          abs(m.vehicle.last[0] - config.DIVE_ROLL_DEG) < 1e-9,
-          "roll=%+.1f" % m.vehicle.last[0])
+    # ⚠️ TOLERANS GEVSETILDI (2026-08-05). Bu kontrolun KASTI "roll sifir
+    #    olsun" degil, "BAYAT QR merkezlemede KULLANILMASIN". Eskiden QR
+    #    yoksa roll tam 0 oluyordu, artik GPS gudumu devrede ve sahte
+    #    telemetri hedefe hizali oldugu icin roll ~0 ama TAM 0 degil:
+    #    offset_lat_lon duzlem-dunya, bearing_deg kuresel yaklasim
+    #    kullaniyor, aralarindaki kucuk fark mikroskobik bir roll uretiyor.
+    #    Ayirt edici olan su: ex=0.9'luk QR merkezlemesi ~10.8 derece
+    #    verirdi. 1 derecenin altinda kalmak "QR kullanilmadi" demektir.
+    check("BAYAT QR yok sayiliyor -> merkezleme UYGULANMIYOR",
+          abs(m.vehicle.last[0]) < 1.0,
+          "roll=%+.3f (QR uygulansa ~%.1f olurdu)" % (
+              m.vehicle.last[0], 0.9 * config.KAMIKAZE_QR_ROLL_GAIN))
 
     m = _FakeMission(); d = _new_dive()
     m.qr_result = _qr(ex=0.9)
     m.qr_result["t"] = d._entry_time - 0.1      # dalistan ONCE okunmus
     run(d.update(m))
     check("DALIS ONCESI okunan QR yok sayiliyor",
-          abs(m.vehicle.last[0] - config.DIVE_ROLL_DEG) < 1e-9,
-          "roll=%+.1f" % m.vehicle.last[0])
+          abs(m.vehicle.last[0]) < 1.0,
+          "roll=%+.3f (QR uygulansa ~%.1f olurdu)" % (
+              m.vehicle.last[0], 0.9 * config.KAMIKAZE_QR_ROLL_GAIN))
 
     # --- SARTNAME: in_av sarti ---
     config.KAMIKAZE_PULLUP_ON_QR = True

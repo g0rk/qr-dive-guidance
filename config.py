@@ -115,7 +115,28 @@ TAKEOFF_ALTITUDE_M = 120.0
 DIVE_PITCH_DEG = -55.0                  # nose-down pitch command (negative = down)
 DIVE_ROLL_DEG = 0.0
 DIVE_THROTTLE = 0.0                     # 0.0 - 1.0
-DIVE_PULL_UP_ALTITUDE_M = 20.0          # AGL altitude at which PULL_UP is triggered
+
+# ⚠️ 20.0 -> 30.0  (OLCUME DAYALI, 2026-08-05)
+#
+#    5 kosumda pull-up KOMUTUNDAN SONRAKI irtifa kaybi olculdu:
+#        14.93 / 15.55 / 15.84 / 16.17 / 16.46 m   (ort 15.79, en kotu 16.46)
+#    Yani 20 m'de komut verince ucak 2.87 - 4.00 m'ye kadar iniyordu.
+#    Simulasyonda carpmiyor ama simulasyonda ruzgar, sensor gurultusu,
+#    arazi egimi ve gercek atalet YOK. 3 m pratikte sifir paydir.
+#
+#    30 m secildi: en kotu olculen kayip 16.46 m -> ~13.5 m pay birakir.
+#
+#    ⚠️ BEDELI VAR: decode penceresi kisalir. QR ancak 40 m'den itibaren
+#       okunuyor (OTURUM-DEVIR §6) ve alcalma ~32 m/s:
+#           tetik 20 m -> pencere 0.63 s (~13 kare @20 FPS), pay  ~3.5 m
+#           tetik 26 m -> pencere 0.44 s (~9  kare),         pay  ~9.5 m
+#           tetik 30 m -> pencere 0.31 s (~6  kare),         pay ~13.5 m
+#       Sartname TEK gecerli kare istiyor, 6 kare hala yeterli.
+#
+#    ⚠️ BU BIR TABANDIR, hedef degil. KAMIKAZE_PULLUP_ON_QR=True oldugu
+#       icin QR okunur okunmaz zaten cikiliyor; bu deger yalnizca QR
+#       HIC okunmazsa devreye giren emniyet zeminidir.
+DIVE_PULL_UP_ALTITUDE_M = 30.0          # AGL altitude at which PULL_UP is triggered
 DIVE_MAX_DURATION_S = 20.0              # hard timeout - abort if dive exceeds this
 
 # ⚠️ SARTNAME s.18: "Dalis baslangic icin minimum irtifa kalkis pistine
@@ -209,6 +230,45 @@ KAMIKAZE_QR_MAX_AGE_S: float = 0.5
 
 # QR okununca dalisi bitirip PULL_UP'a gec.
 KAMIKAZE_PULLUP_ON_QR: bool = True
+
+
+# ==========================================
+# DALISTA GPS TABANLI YANAL GUDUM
+# ==========================================
+# ⚠️ OLCULEN SORUN (2026-08-05): dalis hedefi 42.5 m ISKALIYORDU.
+#    En dusuk noktada ucak 47.3978195/8.5533166, QR pad 47.3979711/8.5527992.
+#    QR pad 2x2 m -> sapma kenarin 21 KATI. 4879 karede 0 QR tespiti;
+#    cunku pad kadraja HIC girmiyor, karede yalnizca cimen var.
+#
+# SEBEP: dalis SABIT ATTITUDE tutuyordu (DIVE_PITCH_DEG, DIVE_ROLL_DEG=0).
+#    Hedefe dogru yanal duzeltme yoktu. Faz 0'da eklenen gorsel merkezleme
+#    (KAMIKAZE_QR_CENTERING) duzeltir AMA once QR'i GORMESI gerekir.
+#    Tavuk-yumurta: QR'i gormek icin isabetli olmak, isabetli olmak icin
+#    QR'i gormek gerekiyordu.
+#
+# COZUM: uc katmanli oncelik.
+#    1) QR gorunuyorsa  -> gorsel merkezleme (en hassas, hedefi dogrudan gorur)
+#    2) QR yoksa        -> GPS yanal gudum (kerteriz farki -> roll)
+#    3) Telemetri yoksa -> kor dalis (eski davranis)
+KAMIKAZE_GPS_GUIDANCE: bool = True
+
+# Kerteriz hatasi (derece) -> roll komutu kazanci.
+# 1 derece kerteriz hatasi kac derece roll uretsin?
+KAMIKAZE_GPS_ROLL_GAIN: float = 1.5
+
+# ⚠️ SINIR, gorsel merkezlemeninkinden (15) GENIS ama yine de dar tutuldu.
+#    Neden genis: GPS gudumu dalisin BASINDA devreye girer ve kisa surede
+#    onemli bir yanal hatayi kapatmasi gerekir. 120 m'den 30 m'ye dalis
+#    ~2.8 s suruyor; 40 m'lik bir sapmayi kapatmak icin ciddi yanal
+#    ivme gerekir.
+#    Neden yine de dar: dalis gorevin en riskli fazi, asiri yatis hem
+#    kadraji dondurur hem yapisal yuk bindirir.
+KAMIKAZE_GPS_MAX_ROLL_DEG: float = 25.0
+
+# ⚠️ Hedefe bu mesafeden yakinsa kerteriz hesabi ANLAMSIZLASIR: birkac
+#    metre kala kucucuk bir konum hatasi kerteriz'i 180 derece cevirebilir
+#    ve ucak son anda sertce yatar. Bu mesafenin altinda roll DONDURULUR.
+KAMIKAZE_GPS_MIN_DISTANCE_M: float = 25.0
 
 # ==========================================
 # PURSUIT (TAKİP/YAKLAŞMA) STATE AYARLARI
