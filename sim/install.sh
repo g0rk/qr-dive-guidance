@@ -6,7 +6,7 @@
 # Kurulanlar:
 #   models/nose_cam    - burun kamerasi (GERCEK DONANIM parametreleri)
 #   models/rc_cessna_cam  - rc_cessna + nose_cam (x500_mono_cam kalibi)
-#   models/qr_pad         - QR pad (sartname s.17) (2x2 m + 45 derece plakalar)
+#   models/qr_pad         - QR pad, sartname s.17 (2x2 m + 45 derece plakalar)
 #   worlds/qr_target.sdf - default dunya + qr_pad @ (500, 0)
 #   airframes/4009_...    - PX4 airframe (dunya + model secimi)
 set -e
