@@ -340,13 +340,25 @@ class PerceptionProcess(mp.Process):
         cv2.line(frame, (icx - 12, icy), (icx + 12, icy), color, 1, cv2.LINE_AA)
         cv2.line(frame, (icx, icy - 12), (icx, icy + 12), color, 1, cv2.LINE_AA)
 
-        etiket = "%s%s" % (data[:20], "" if in_av else "  [OUTSIDE AV]")
-        self._draw_text(frame, etiket, (x, y - 10), 0.7, color)
+        # Primary label is the STATUS, not the payload.
+        #
+        # The distinction it carries is the whole mission rule: decoding the
+        # QR is not enough, the code must lie ENTIRELY inside the target
+        # area. A frame that decodes a QR hanging over the edge looks like
+        # success and is not one. Printing the payload as the headline
+        # blurred that -- the text read the same either way.
+        status = "MISSION COMPLETE" if in_av else "DECODED - OUTSIDE TARGET AREA"
+        self._draw_text(frame, status, (x, y - 12), 0.8, color)
+
+        # The decoded payload stays, one line below and smaller. It is the
+        # value that goes into the mission packet, so it has to be visible
+        # for diagnosis -- just not as the headline.
+        #
         # Source tag: "quad" when the four corners were usable, "box" when
         # the fallback ran. Without it a degenerate detection looks exactly
         # like a good one in the recording.
-        self._draw_text(frame, "src=%s" % source, (x, y + bh + 20),
-                        0.5, color, thickness=1)
+        self._draw_text(frame, "%s   src=%s" % (data[:24], source),
+                        (x, y + bh + 22), 0.5, color, thickness=1)
 
     def _draw_hud(self, frame, w: int, h: int, fps: float) -> None:
         mode_str   = f"MOD: {self._current_mode().name}"
