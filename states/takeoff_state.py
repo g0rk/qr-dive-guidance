@@ -8,6 +8,16 @@ import time
 
 from states.base_state import BaseState
 
+# ⚠️ BU IMPORT EKSIKTI ve UCAGIN KALKMASINI TAMAMEN ENGELLIYORDU.
+#    __init__ icinde config.TAKEOFF_ALTITUDE_M kullaniliyor (asagida);
+#    import olmayinca TakeoffState() kurulurken NameError atiyordu.
+#    CommandRouter kurulumu try/except ile sardigi icin cokme, sadece
+#    "Command rejected: Failed to instantiate TakeoffState: name 'config'
+#    is not defined" seklinde bir UYARIYA donusuyordu -> sessiz kaliyordu.
+#    Gerileme kaynagi: 4ec2179'da _target_alt_m koddan config'e tasindi,
+#    import eklenmedi. tests/test_durum_kurulumu.py bunu kilitliyor.
+import config
+
 if TYPE_CHECKING:
     from processes.mission_controller import MissionController
 
