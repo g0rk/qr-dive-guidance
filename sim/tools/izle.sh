@@ -77,8 +77,8 @@ echo "     python3 sim/tools/komut.py takeoff"
 echo "     ... HOLD'a ulasinca ..."
 echo "     python3 sim/tools/komut.py align"
 echo
-echo "  Ya da otomatik surucu:"
-echo "     python3 sim/tools/surucu.py"
+echo "  Kamera goruntusunu ayrica MP4'e almak istersen:"
+echo "     python3 sim/tools/ucus_videosu.py 240"
 echo
 echo "  Loglar: /tmp/mission.log  /tmp/px4_sitl.log  /tmp/gz_sim.log"
 echo "======================================================================"
