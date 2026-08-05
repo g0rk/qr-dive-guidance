@@ -255,7 +255,7 @@
       <name>grass_field</name>
       <pose>500 0 0 0 0 0</pose>
     </include><include>
-      <uri>model://qr_pad</uri>
+      <uri>model://qr_pad_v1</uri>
       <name>qr_pad</name>
       <pose>500 0 0 0 0 0</pose>
     </include><model name="diag_cam">

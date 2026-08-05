@@ -87,13 +87,24 @@ def main(src, dst):
       <name>grass_field</name>
       <pose>500 0 0 0 0 0</pose>
     </include>"""))
+    # ⚠️ qr_pad DEGIL qr_pad_v1.
+    #    Taban qr_pad modeli QR Versiyon 2 ve sessiz bolgesi
+    #    ~0.2 modul (standart 4 ister). Olculdu:
+    #        qr_pad      QR dokunun %98'i, sessiz bolge 8 px  = 0.2 modul
+    #        qr_pad_v1   QR dokunun %84'u, sessiz bolge 80 px = 2 modul
+    #    Haberlesme Dokumani §9 yarismada Versiyon 1 kullanilacagini
+    #    soyluyor ve 40 m decode esigi V1 dokusuyla olculdu.
+    #    Duzeltilmis model daha once yapilmisti ama DUNYAYA HIC BAGLANMAMIS;
+    #    kameralı ucusta 0 QR tespiti bunun sonucuydu.
+    #    <name> "qr_pad" kaliyor: tests/test_hedef_koordinati.py bu isimle
+    #    pad'in pozunu okuyup config hedefini dogruluyor.
     world.append(frag("""
     <include>
-      <uri>model://qr_pad</uri>
+      <uri>model://qr_pad_v1</uri>
       <name>qr_pad</name>
       <pose>500 0 0 0 0 0</pose>
     </include>"""))
-    print("  grass_field + qr_pad eklendi @ (500, 0)")
+    print("  grass_field + qr_pad_v1 eklendi @ (500, 0)")
 
     # --- 5) TANI KAMERASI: bilinen pozdan QR'a bakan bagimsiz kamera ---
     # Ucagin kamerasi calismiyorsa sorunun montajda mi sahnede mi oldugunu
