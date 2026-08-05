@@ -29,8 +29,22 @@ from sensor_msgs.msg import Image
 from cv_bridge import CvBridge
 
 import config
-from processes.perception import polygon_to_corners, quad_center, quad_in_av
+from processes.perception import (PerceptionProcess, polygon_to_corners,
+                                  quad_center, quad_in_av)
 from pyzbar.pyzbar import decode as zbar_decode
+
+
+class _OverlayShim(PerceptionProcess):
+    """Borrows the real drawing code without starting a perception process.
+
+    ⚠️ NEDEN: bu arac eskiden KENDI cizimini yapiyordu. Yani kaydedilen
+       video, ucagin GERCEKTE cizdigi seyi gostermiyordu - iki ayri cizim
+       kodu vardi ve sessizce ayrisabilirlerdi. Kayit, gostermesi gereken
+       seyin ta kendisini gostermeli.
+    """
+
+    def __init__(self):
+        pass
 
 SURE = float(sys.argv[1]) if len(sys.argv) > 1 else 240.0
 MP4 = "/tmp/ucus.mp4"
@@ -47,6 +61,7 @@ class Kaydedici(Node):
         self.decode_sayisi = 0
         self.av_ici = 0
         self.t0 = time.monotonic()
+        self._overlay = _OverlayShim()
         self.rapor = open(RAPOR, "w")
         self.rapor.write("kare,t,decode,metin,av_ici,qr_px\n")
         self.create_subscription(Image, "/camera", self._kare, 1)
@@ -70,21 +85,32 @@ class Kaydedici(Node):
             metin = b.data.decode("utf-8", "replace")
             self.decode_sayisi += 1
             kose = polygon_to_corners(getattr(b, "polygon", None), 0, 0, 1)
-            qr_px = max(b.rect.width, b.rect.height)
-            if kose and quad_center(kose) is not None:
+            x, y, bw, bh = b.rect
+            qr_px = max(bw, bh)
+            qc = quad_center(kose)
+            if kose and qc is not None:
                 av_ici = quad_in_av(kose, ax1, ay1, ax2, ay2)
-                if av_ici:
-                    self.av_ici += 1
-                renk = (0, 255, 0) if av_ici else (0, 165, 255)
-                for i in range(4):
-                    cv2.line(kare, tuple(kose[i]), tuple(kose[(i + 1) % 4]), renk, 3)
+                cx, cy = qc
+                kaynak = "quad"
+            else:
+                av_ici = (x >= ax1 and y >= ay1
+                          and (x + bw) <= ax2 and (y + bh) <= ay2)
+                cx, cy = x + bw / 2.0, y + bh / 2.0
+                kaynak = "box"
+            if av_ici:
+                self.av_ici += 1
+            renk = (0, 255, 0) if av_ici else (0, 165, 255)
+            # UCAGIN GERCEKTE CIZDIGI overlay - ayri bir kopya degil.
+            self._overlay._draw_qr_overlay(kare, kose, (x, y, bw, bh),
+                                           (cx, cy), renk, metin, av_ici,
+                                           kaynak)
 
         cv2.rectangle(kare, (ax1, ay1), (ax2, ay2), (255, 255, 0), 2)
-        cv2.putText(kare, "kare %d  t=%.1fs  %s%s" % (
-            self.n, t, metin or "QR yok", "  [AV ICI]" if av_ici else
-            ("  [AV DISI]" if metin else "")),
-            (20, 40), cv2.FONT_HERSHEY_SIMPLEX, 0.9,
-            (0, 255, 0) if av_ici else (0, 0, 255), 2)
+        cv2.putText(kare, "AV", (ax1 + 8, ay1 + 26),
+                    cv2.FONT_HERSHEY_SIMPLEX, 0.6, (255, 255, 0), 2)
+        cv2.putText(kare, "frame %d   t=%.1fs" % (self.n, t),
+                    (20, 40), cv2.FONT_HERSHEY_SIMPLEX, 0.8,
+                    (230, 230, 230), 2)
 
         self.rapor.write("%d,%.3f,%d,%s,%d,%d\n" % (
             self.n, t, 1 if metin else 0, metin, 1 if av_ici else 0, qr_px))
