@@ -196,14 +196,64 @@ def test_p2():
 # ======================================================================
 def test_p3():
     print("=" * 76)
-    print("  P3 - dalis acisi = gorus hatti acisi")
+    print("  P3 - dalis geometrisi: hedef dalis boyunca KADRAJDA kaliyor mu")
     print("=" * 76)
 
-    los = math.degrees(math.atan2(config.APPROACH_SAFE_ALTITUDE_M,
-                                  config.APPROACH_DIVE_ARM_DISTANCE_M))
-    check("dalis acisi gorus hattina esit (+-2)",
-          abs(los - abs(config.DIVE_PITCH_DEG)) <= 2.0,
-          "gorus=%.1f dalis=%.1f" % (los, abs(config.DIVE_PITCH_DEG)))
+    # ⚠️ BU TESTIN ILKESI DEGISTI (2026-08-05, olcumle).
+    #
+    #    ESKI ILKE: "dalis acisi = giristeki gorus hatti acisi olmali,
+    #    boylece QR dalis boyunca bore-sight'ta sabit kalir."
+    #    Bu, ucak TAM pitch yonunde ucsaydi dogruydu. UCMUYOR: ani yol
+    #    acisi ~50 dereceye ulassa da ORTALAMA 45, cunku dalisin basinda
+    #    ucak henuz burnunu indirmemis olup cok yatay yol aliyor.
+    #
+    #    Sonucu OLCULDU: eski tetik (84 m) ile ucak 40 m irtifada hedefe
+    #    3.9 m kala variyordu; kamera o irtifada yerde ONDEKI 17.2-54.0 m
+    #    arasini gordugu icin hedef KADRAJIN ALTINDA kaliyordu.
+    #    4879 karede 0 QR tespiti.
+    #
+    #    YENI ILKE: hedef DECODE IRTIFASINDA bore-sight'ta olsun ve dalis
+    #    boyunca dikey gorus alanindan CIKMASIN. Asagisi bunu sinar.
+    los_giris = math.degrees(math.atan2(config.APPROACH_SAFE_ALTITUDE_M,
+                                        config.APPROACH_DIVE_ARM_DISTANCE_M))
+    check("giriste hedef bore-sight'in USTUNDE (LOS < pitch)",
+          los_giris < abs(config.DIVE_PITCH_DEG),
+          "LOS=%.1f < pitch=%.1f" % (los_giris, abs(config.DIVE_PITCH_DEG)))
+
+    # Decode irtifasinda LOS tam pitch'e esit olmali (bore-sight).
+    kalan_decode = (config.APPROACH_DIVE_ARM_DISTANCE_M
+                    - (config.APPROACH_SAFE_ALTITUDE_M - config.QR_DECODE_ALTITUDE_M)
+                    / math.tan(math.radians(config.DIVE_EFFECTIVE_PATH_ANGLE_DEG)))
+    los_decode = math.degrees(math.atan2(config.QR_DECODE_ALTITUDE_M, kalan_decode))
+    check("decode irtifasinda hedef BORE-SIGHT'ta (+-2)",
+          abs(los_decode - abs(config.DIVE_PITCH_DEG)) <= 2.0,
+          "LOS=%.1f pitch=%.1f (hedef %.1f m onde)" % (
+              los_decode, abs(config.DIVE_PITCH_DEG), kalan_decode))
+
+    # Dalis boyunca dikey gorus alanindan cikmamali.
+    # VFOV kamera modelinden okunur - elle yazilan bir sayi degil.
+    sys.path.insert(0, os.path.join(
+        os.path.dirname(os.path.dirname(os.path.abspath(__file__))), "sim", "tools"))
+    import cam_params
+    vfov = math.degrees(cam_params.vfov_rad())
+    ust, alt_kenar = abs(config.DIVE_PITCH_DEG) - vfov / 2, abs(config.DIVE_PITCH_DEG) + vfov / 2
+
+    disarida = []
+    for h in (120, 100, 80, 60, 50, 40, 35, config.DIVE_PULL_UP_ALTITUDE_M):
+        yatay = (config.APPROACH_DIVE_ARM_DISTANCE_M
+                 - (config.APPROACH_SAFE_ALTITUDE_M - h)
+                 / math.tan(math.radians(config.DIVE_EFFECTIVE_PATH_ANGLE_DEG)))
+        if yatay <= 0.5:
+            disarida.append((h, "ucagin altinda"))
+            continue
+        los = math.degrees(math.atan2(h, yatay))
+        if not (ust <= los <= alt_kenar):
+            disarida.append((h, "LOS=%.1f" % los))
+    check("hedef giristen pull-up tabanina KESINTISIZ kadrajda",
+          not disarida,
+          "kamera %.1f-%.1f derece goruyor; disarida: %s" % (
+              ust, alt_kenar, disarida or "yok"))
+
     check("QR plaka esiginin ustunde (>=45, sartname s.17)",
           abs(config.DIVE_PITCH_DEG) >= config.QR_PLATE_MIN_LOOKDOWN_DEG,
           "%.1f >= %.0f" % (abs(config.DIVE_PITCH_DEG),

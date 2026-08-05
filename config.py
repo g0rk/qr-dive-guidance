@@ -148,11 +148,58 @@ DIVE_MIN_ENTRY_ALTITUDE_M = 100.0
 # QR plakalarinin dayattigi minimum bakis acisi (sartname s.17).
 QR_PLATE_MIN_LOOKDOWN_DEG = 45.0
 
-# ⚠️ TURETILMIS - elle yazmayin. Dalis acisi ile irtifadan hesaplanir ki
-#    ikisi birbirinden sessizce ayrilamasin (eski hatanin kaynagi tam buydu).
-#    Degistirmek icin DIVE_PITCH_DEG'i degistirin.
-APPROACH_DIVE_ARM_DISTANCE_M = APPROACH_SAFE_ALTITUDE_M / math.tan(
-    math.radians(abs(DIVE_PITCH_DEG))
+# QR'in okunmaya basladigi irtifa. ⚠️ TAHMIN DEGIL, OLCUM:
+# gz render'i + gercek algi kodu ile irtifa basamaklariyla bulundu
+# (OTURUM-DEVIR §6). 60 ve 50 m'de 0/4, 40 m'de 4/4 decode.
+QR_DECODE_ALTITUDE_M = 40.0
+
+# ⚠️ DALISIN GERCEKLESEN YOL ACISI - komut edilen pitch DEGIL.
+#
+#    Bu ikisini karistirmak bu projede pahaliya mal oldu. Fark:
+#      DIVE_PITCH_DEG = -55  -> burnun nereye BAKTIGI (komut)
+#      bu deger        =  45  -> ucagin GERCEKTE nereye GITTIGI (olculen)
+#
+#    Ani yol acisi dalisin ortasinda ~50 dereceye ulasiyor (pitch'e cok
+#    yakin, aralarinda 1.7 derece var). AMA ORTALAMA 45: cunku dalisin
+#    BASINDA ucak henuz burnunu indirmemis, cok yatay yol alip az irtifa
+#    kaybediyor. Tetik mesafesini belirleyen sey bu ORTALAMA.
+#
+#    Olcumden geri cozuldu (2026-08-05): eski tetik 84.02 m'yken ucak
+#    120 m'den 40 m'ye inerken 80.1 m yatay yol aldi -> atan(80.0/80.1)
+#    = 45.0 derece.
+DIVE_EFFECTIVE_PATH_ANGLE_DEG = 45.0
+
+# ⚠️ TURETILMIS - elle yazmayin.
+#
+#    ESKI TURETME YANLISTI:
+#        ARM = APPROACH_SAFE_ALTITUDE_M / tan(DIVE_PITCH_DEG) = 120/tan(55) = 84 m
+#    Iki hatasi vardi:
+#      1. KOMUT EDILEN pitch'i, GERCEKLESEN yol acisi yerine kullaniyordu.
+#      2. Hedefin decode irtifasinda kameranin ONUNDE olmasi gerektigini
+#         hesaba katmiyordu; sanki ucagin hedefe VARDIGI an onemliymis
+#         gibi davraniyordu.
+#
+#    SONUCU OLCULDU: ucak hedefin uzerine 40 m irtifadayken variyordu ve
+#    hedefe yalnizca 3.9 m kaliyordu. Kamera ise o irtifada yerde ONDEKI
+#    17.2-54.0 m arasini goruyor -> hedef KADRAJIN ALTINDA kaliyordu.
+#    4879 karede 0 QR tespiti bunun sonucuydu.
+#
+#    DOGRU TURETME - iki parca:
+#      d_bore : decode irtifasinda hedefin bore-sight'ta olmasi icin
+#               onde olmasi gereken mesafe = h_decode / tan(pitch)
+#      d_dive : giris irtifasindan decode irtifasina inerken katedilen
+#               yatay yol = (h_giris - h_decode) / tan(gerceklesen_aci)
+#
+#      ARM = d_dive + d_bore
+#          = (120-40)/tan(45) + 40/tan(55)
+#          = 80.1 + 28.0 = 108.1 m
+#
+#    Dogrulama: yeni tetikle 40 m irtifada hedefe 28.0 m kalir; kamera o
+#    irtifada 14.5-47.9 m arasini gorur -> hedef TAM BORE-SIGHT'TA.
+APPROACH_DIVE_ARM_DISTANCE_M = (
+    (APPROACH_SAFE_ALTITUDE_M - QR_DECODE_ALTITUDE_M)
+    / math.tan(math.radians(DIVE_EFFECTIVE_PATH_ANGLE_DEG))
+    + QR_DECODE_ALTITUDE_M / math.tan(math.radians(abs(DIVE_PITCH_DEG)))
 )
 
 # Pull-up
