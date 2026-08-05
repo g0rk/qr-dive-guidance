@@ -128,6 +128,50 @@ def test_telemetri_yoksa():
     check("bos telemetride roll uretilmiyor", roll is None, "roll=%s" % roll)
 
 
+def test_devam_esigi_tutarli():
+    print("\n7) QR SONRASI DEVAM ESIGI")
+    # ⚠️ Devam esigi tabandan BUYUK olmali. Kucuk olsaydi taban once
+    #    tetiklenir ve devam ayari HICBIR ISE YARAMAZDI - hem de sessizce:
+    #    kod calisir, hata vermez, sadece hep 1 kare toplanir.
+    devam = config.KAMIKAZE_QR_CONTINUE_ALTITUDE_M
+    taban = config.DIVE_PULL_UP_ALTITUDE_M
+    check("devam esigi > pull-up tabani", devam > taban,
+          "devam=%.1f > taban=%.1f" % (devam, taban))
+
+    # Devam esigi, UCUSTA olculen ilk tespit irtifasinin ALTINDA olmali,
+    # yoksa hic devam edilmez.
+    # ⚠️ Burada QR_DECODE_ALTITUDE_M (40, sabit kamera testi) DEGIL,
+    #    QR_FIRST_DETECT_ALTITUDE_M (41.7, ucusta olculen EN KOTU) kullanilir.
+    #    Ilk yazimda 40 kullanmistim ve test dustu - dogru davranis:
+    #    iki farkli olcumu ayni sanmak tam da bu projenin tekrar eden hatasi.
+    check("devam esigi < ucusta olculen ilk tespit irtifasi",
+          devam < config.QR_FIRST_DETECT_ALTITUDE_M,
+          "devam=%.1f < ilk_tespit=%.1f" % (
+              devam, config.QR_FIRST_DETECT_ALTITUDE_M))
+
+    # Kac kare kazanildigi: (ilk_tespit - devam_esigi) / alcalma_hizi
+    ALCALMA_M_S = 32.0      # olculen
+    FPS = 30.0
+    pencere_s = (config.QR_FIRST_DETECT_ALTITUDE_M - devam) / ALCALMA_M_S
+    kare = pencere_s * FPS
+    # EN KOTU gozlemle ~6 kare; ortalama gozlemle (43.3 m) ~8 kare.
+    # Sartname TEK gecerli kare istiyor, 6 kare 6 kat marj demek.
+    check("en kotu durumda >= 5 gecerli kare", kare >= 5.0,
+          "%.2f s -> ~%.0f kare (en kotu gozlem %.1f m ile)" % (
+              pencere_s, kare, config.QR_FIRST_DETECT_ALTITUDE_M))
+
+    # ⚠️ SARTNAME s.20: pencere dalis bitisinin +-1 saniyesi. Ilk tespit ile
+    #    dalis bitisi arasindaki sure bu pencereye SIGMALI.
+    check("ilk tespit, dalis bitisinin +-1 sn penceresinde",
+          pencere_s <= 1.0, "aralarinda %.2f s var (sinir 1.00)" % pencere_s)
+
+    # Olculen irtifa kaybiyla en dusuk noktanin kestirimi
+    EN_KOTU_KAYIP = 16.46
+    en_dusuk = devam - EN_KOTU_KAYIP
+    check("kestirilen en dusuk nokta > 15 m", en_dusuk > 15.0,
+          "%.1f - %.1f = %.1f m" % (devam, EN_KOTU_KAYIP, en_dusuk))
+
+
 def test_pull_up_tabani_yukseldi():
     print("\n6) PULL-UP TABANI OLCUME GORE YUKSELTILDI")
     # Olculen EN KOTU irtifa kaybi 16.46 m (5 kosum).
@@ -150,6 +194,7 @@ if __name__ == "__main__":
     test_yakin_mesafede_donduruluyor()
     test_kapatilabiliyor()
     test_telemetri_yoksa()
+    test_devam_esigi_tutarli()
     test_pull_up_tabani_yukseldi()
     print("\n%d/%d kontrol gecti" % (sum(PASS), len(PASS)))
     sys.exit(0 if all(PASS) else 1)

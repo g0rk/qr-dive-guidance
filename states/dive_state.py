@@ -50,6 +50,10 @@ class DiveState(BaseState):
         self._entry_wall: float = 0.0     # duvar saati - kamikaze paketi icin
         self._entry_alt_m: float = 0.0
         self._live = Live("", refresh_per_second=10, transient=True)
+        # QR okunduktan sonra devam etme mantigi icin:
+        self._qr_hit: dict | None = None   # en SON gecerli (AV ici) tespit
+        self._qr_hit_count: int = 0        # kac karede gecerli tespit oldu
+        self._qr_first_alt_m: float = 0.0  # ilk gecerli tespitin irtifasi
 
     def _fresh_qr(self, mission: MissionController):
         """
@@ -172,9 +176,27 @@ class DiveState(BaseState):
 
         # 2. Altitude floor guard — trigger pull-up
         if tel.rel_alt_m <= config.DIVE_PULL_UP_ALTITUDE_M:
-            logger.info(
-                "Pull-up altitude reached (%.1fm). -> PULL_UP", tel.rel_alt_m
-            )
+            # ⚠️ TABANA GELIRKEN ELIMIZDE GECERLI TESPIT VARSA PAKETI KAYBETME.
+            #    Normalde 35 m'lik devam esigi (3b) once tetiklenir. Ama
+            #    hizli bir alcalmada tek tikte 36 -> 29 m atlanabilir ve o
+            #    zaman ONCE burasi calisir. Paketi burada da damgalamazsak
+            #    okunmus bir QR sessizce cope giderdi.
+            if self._qr_hit is not None:
+                self._qr_hit["dive_end_wall"] = time.time()
+                self._qr_hit["qr_frames"] = self._qr_hit_count
+                self._qr_hit["qr_first_alt_m"] = self._qr_first_alt_m
+                mission.kamikaze_hit = self._qr_hit
+                logger.info(
+                    "Taban irtifasi (%.1fm) devam esiginden ONCE geldi -- "
+                    "paket yine de kaydedildi (%d gecerli kare, QR=%r)",
+                    tel.rel_alt_m, self._qr_hit_count,
+                    self._qr_hit.get("qr_text"),
+                )
+            else:
+                logger.info(
+                    "Pull-up altitude reached (%.1fm), QR OKUNAMADI. -> PULL_UP",
+                    tel.rel_alt_m,
+                )
             from states.pull_up_state import PullUpState
 
             await mission._change_state(PullUpState())
@@ -189,19 +211,50 @@ class DiveState(BaseState):
         #       DEGILDIR". Bu yuzden gecis `in_av` sartina bagli. AV disinda
         #       okunan QR merkezlemede kullanilir (hedefe yonelmek icin) ama
         #       gorevi tamamlamis SAYILMAZ - erken pull-up puani kaybettirir.
-        if qr is not None and config.KAMIKAZE_PULLUP_ON_QR and qr.get("in_av"):
-            logger.info(
-                "QR okundu ve AV ICINDE (%r) @ alt=%.1fm -> PULL_UP",
-                qr.get("data"), tel.rel_alt_m,
-            )
-            mission.kamikaze_hit = {
+        # 3a. GECERLI TESPITI KAYDET (ama hemen cikma).
+        #     Her yeni tespit oncekinin uzerine yazilir: ucak alcaldikca QR
+        #     buyur, yani SON tespit en guvenilir olanidir.
+        if qr is not None and qr.get("in_av"):
+            if self._qr_hit is None:
+                self._qr_first_alt_m = tel.rel_alt_m
+                logger.info(
+                    "QR okundu ve AV ICINDE (%r) @ alt=%.1fm -- %.1f m'ye "
+                    "kadar DEVAM edilecek (daha cok gecerli kare icin)",
+                    qr.get("data"), tel.rel_alt_m,
+                    config.KAMIKAZE_QR_CONTINUE_ALTITUDE_M,
+                )
+            self._qr_hit_count += 1
+            self._qr_hit = {
                 "dive_start_wall": self._entry_wall,
-                "dive_end_wall":   time.time(),
                 "qr_text":         qr.get("data"),
                 "qr_box":          qr.get("box"),
                 "entry_alt_m":     self._entry_alt_m,   # sartname: >=100 m kaniti
                 "alt_m":           tel.rel_alt_m,
             }
+
+        # 3b. TESPIT VAR ve DEVAM ESIGINE INILDI -> cik.
+        #
+        # ⚠️ Kontrol `qr is not None` blogunun DISINDA olmali: tespitten
+        #    sonra QR'i kaybetsek bile (bulaniklik, kadraj) cikis yapilmali.
+        #    Ice alsaydik, son karede QR gorunmezse ucak dalmaya devam
+        #    ederdi - sessiz ve olumcul.
+        #
+        # dive_end_wall BURADA damgalanir, ilk tespitte degil: sartnamenin
+        # +-1 sn penceresi DALIS BITIS zamanina gore tanimli ve dalis
+        # gercekten burada bitiyor. Ilk tespit bu andan ~0.34 s once,
+        # yani pencerenin rahatca icinde.
+        if (self._qr_hit is not None and config.KAMIKAZE_PULLUP_ON_QR
+                and tel.rel_alt_m <= config.KAMIKAZE_QR_CONTINUE_ALTITUDE_M):
+            self._qr_hit["dive_end_wall"] = time.time()
+            self._qr_hit["qr_frames"] = self._qr_hit_count
+            self._qr_hit["qr_first_alt_m"] = self._qr_first_alt_m
+            mission.kamikaze_hit = self._qr_hit
+            logger.info(
+                "DEVAM tamamlandi @ alt=%.1fm -> PULL_UP  "
+                "(ilk tespit %.1f m, toplam %d gecerli kare, QR=%r)",
+                tel.rel_alt_m, self._qr_first_alt_m, self._qr_hit_count,
+                self._qr_hit.get("qr_text"),
+            )
             from states.pull_up_state import PullUpState
 
             await mission._change_state(PullUpState())

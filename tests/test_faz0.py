@@ -424,15 +424,58 @@ def test_p4():
     check("  ...ama merkezlemede KULLANILIYOR", m.vehicle.last[0] > 0,
           "roll=%+.1f" % m.vehicle.last[0])
 
+    # ⚠️ BU DAVRANIS KASTEN DEGISTIRILDI (2026-08-05).
+    #    Eskiden AV icinde QR okunur okunmaz HEMEN PULL_UP'a gecilirdi.
+    #    Olculdu: oyle yapinca ucus boyunca YALNIZCA 1 cozulebilir kare
+    #    topluyorduk ve o karede QR 70 px, yani decode esiginin tam ustu.
+    #    Sartname tek kare istiyor ama sifir marjla calismak sahada
+    #    kirilgan. Artik tespitten sonra KAMIKAZE_QR_CONTINUE_ALTITUDE_M'ye
+    #    kadar devam edilip daha cok/daha buyuk kare toplaniyor.
+    #    Sartname s.20 buna izin veriyor: pencere dalis bitisinin +-1 sn'si
+    #    ve alcalma 32 m/s oldugu icin 1 sn = 32 m; devam araligi (6.7 m)
+    #    pencerenin rahatca icinde.
+
+    # (a) DEVAM ESIGININ USTUNDE: tespit kaydedilir ama HENUZ cikilmaz.
+    _FakeTelD.rel_alt_m = config.KAMIKAZE_QR_CONTINUE_ALTITUDE_M + 5.0
     m = _FakeMission(); m.qr_result = _qr(ex=0.1, in_av=True)
     d = _new_dive(); run(d.update(m))
-    check("AV ICINDE okunan QR -> PULL_UP", m.changed == "PULL_UP",
-          "gecis=%s" % m.changed)
+    check("AV ICINDE QR, devam esigi USTUNDE -> DEVAM (cikis yok)",
+          m.changed is None, "gecis=%s (alt=%.1f)" % (
+              m.changed, _FakeTelD.rel_alt_m))
+
+    # (b) DEVAM ESIGININ ALTINDA: cikilir ve paket damgalanir.
+    _FakeTelD.rel_alt_m = config.KAMIKAZE_QR_CONTINUE_ALTITUDE_M - 1.0
+    m = _FakeMission(); m.qr_result = _qr(ex=0.1, in_av=True)
+    d = _new_dive(); run(d.update(m))
+    check("AV ICINDE QR, devam esigi ALTINDA -> PULL_UP",
+          m.changed == "PULL_UP", "gecis=%s (alt=%.1f)" % (
+              m.changed, _FakeTelD.rel_alt_m))
     check("kamikaze_hit dolduruldu", m.kamikaze_hit is not None,
           str(sorted(m.kamikaze_hit.keys())) if m.kamikaze_hit else "")
     check("  ...dalis giris irtifasi kaniti pakette (>=100)",
           m.kamikaze_hit and m.kamikaze_hit.get("entry_alt_m", 0) >= 100.0,
           "%.1f m" % (m.kamikaze_hit or {}).get("entry_alt_m", 0))
+    check("  ...dalis BITIS zamani damgalandi (sartname +-1 sn penceresi)",
+          m.kamikaze_hit and m.kamikaze_hit.get("dive_end_wall", 0) > 0,
+          "var" if (m.kamikaze_hit or {}).get("dive_end_wall") else "YOK")
+    check("  ...kac gecerli kare toplandigi kayitli",
+          m.kamikaze_hit and "qr_frames" in m.kamikaze_hit,
+          "%s kare" % (m.kamikaze_hit or {}).get("qr_frames"))
+
+    # (c) TESPIT VAR ama QR KAYBOLDU: yine de cikilmali.
+    #     ⚠️ Kontrol `qr is not None` blogunun icinde olsaydi, son karede
+    #        QR gorunmediginde ucak dalmaya DEVAM ederdi - sessiz ve olumcul.
+    m = _FakeMission(); m.qr_result = _qr(ex=0.1, in_av=True)
+    d = _new_dive()
+    _FakeTelD.rel_alt_m = config.KAMIKAZE_QR_CONTINUE_ALTITUDE_M + 5.0
+    run(d.update(m))                      # tespit kaydedilir
+    m.qr_result = None                    # QR kayboldu
+    _FakeTelD.rel_alt_m = config.KAMIKAZE_QR_CONTINUE_ALTITUDE_M - 1.0
+    run(d.update(m))
+    check("QR kaybolsa bile devam esiginde CIKILIYOR",
+          m.changed == "PULL_UP", "gecis=%s" % m.changed)
+
+    _FakeTelD.rel_alt_m = 60.0            # digerlerini etkilemesin
 
     config.KAMIKAZE_PULLUP_ON_QR = eski_pullup
     print()

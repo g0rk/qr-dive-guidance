@@ -151,7 +151,17 @@ QR_PLATE_MIN_LOOKDOWN_DEG = 45.0
 # QR'in okunmaya basladigi irtifa. ⚠️ TAHMIN DEGIL, OLCUM:
 # gz render'i + gercek algi kodu ile irtifa basamaklariyla bulundu
 # (OTURUM-DEVIR §6). 60 ve 50 m'de 0/4, 40 m'de 4/4 decode.
+# Bu deger SABIT KAMERA testinden gelir ve tetik mesafesi turetmesinde
+# kullanilir - orada muhafazakar olmak dogru.
 QR_DECODE_ALTITUDE_M = 40.0
+
+# ⚠️ UCUSTA olculen ILK TESPIT irtifasi - yukaridakinden FARKLI.
+#    5 kosumda: 41.7 / 42.0 / 42.8 / 43.6 / 46.6 m  (ort 43.3)
+#    Sabit kamera testinden (40 m) YUKSEK cikiyor; egik menzil ve ROI
+#    kirpmasi lehimize calisiyor.
+#    ⚠️ EN KOTU gozlem kullanilmali. Ilk hesabimda EN IYI gozlemi (46.6)
+#       kullanip "~10 kare" demistim - IYIMSERDI. Gercekci taban 41.7.
+QR_FIRST_DETECT_ALTITUDE_M = 41.7
 
 # ⚠️ DALISIN GERCEKLESEN YOL ACISI - komut edilen pitch DEGIL.
 #
@@ -277,6 +287,47 @@ KAMIKAZE_QR_MAX_AGE_S: float = 0.5
 
 # QR okununca dalisi bitirip PULL_UP'a gec.
 KAMIKAZE_PULLUP_ON_QR: bool = True
+
+# ==========================================
+# QR OKUNDUKTAN SONRA NE KADAR DEVAM EDILECEK
+# ==========================================
+# ⚠️ OLCULEN SORUN: ilk gecerli tespitte HEMEN cikilinca ucus boyunca
+#    YALNIZCA 1 cozulebilir kare topluyorduk. Bagimsiz sayac (her kareyi
+#    tam cozunurlukte tarayan sim/tools/ucus_videosu.py) 3687 karede 1
+#    tespit buldu; o karede QR 70 piksel - olculen decode esiginin TAM
+#    USTU (40 m'de 70 px 4/4, 50 m'de 0/4).
+#    Sartname tek gecerli kare istiyor, yani geciyoruz - ama sifir marjla.
+#    O tek kare kaybolursa (sikistirma, zamanlama, ruzgar) 300 puan gider.
+#
+# SARTNAME NE DIYOR (s.20):
+#    "kamikaze paketi icerisinde gonderilen DALIS BITIS ZAMANI esas alinir.
+#     Dalis bitis zamanindan 1 saniye once ve 1 saniye sonra olmak uzere
+#     2 saniyelik zaman dilimi uzerinden kontrol edilir. Bu zaman dilimi
+#     icindeki EN AZ 1 KAREDE QR kod sinirlarinin tamami Hedef Vurus
+#     Alani'nda olmalidir."
+#    Alcalma ~32 m/s, yani 1 saniye = 32 METRE irtifa. Pencere +-1 sn
+#    oldugu icin dalis bitisinin 32 m ustunden 32 m altina kadar her kare
+#    pencerenin ICINDE. QR ~46 m'den itibaren cozulebiliyor -> devam
+#    etmenin pencere acisindan MALIYETI YOK, yalnizca kazanci var.
+#
+# NEDEN ZAMAN DEGIL IRTIFA:
+#    Baglayici kisit bir IRTIFA. Sartname s.29: "Minimum ve maksimum ucus
+#    irtifasi... yarismacilara BILDIRILECEKTIR" -> henuz BELLI DEGIL.
+#    s.21: "Kamikaze gorevi yapilirken ucus irtifa limitinin altina
+#    inildigi durumda ALAN DISINA CIKIS olarak degerlendirilecektir."
+#    "0.3 saniye devam et" komutunun irtifa maliyeti alcalma hizina gore
+#    degisir (hizli daliste 12 m, yavasta 8 m). Irtifa tabani ise
+#    DETERMINISTIK - bilinmeyen bir limite karsi ongorulebilir olmak sart.
+#
+# 35 m secildi:
+#    QR cozulebilir ~46 m -> devam araligi 11 m -> 11/32 = 0.34 s
+#    -> ~10 gecerli kare (30 FPS), QR 70 -> ~86 px
+#    pull-up komutu 35 m, olculen irtifa kaybi 13-16 m -> en dusuk ~20 m
+#
+# ⚠️ DIVE_PULL_UP_ALTITUDE_M'den (30) BUYUK OLMALI. Kucuk olsaydi taban
+#    once tetiklenir ve bu ayar hicbir ise yaramazdi - sessizce.
+#    tests/test_gps_gudum.py bu sirayi kilitliyor.
+KAMIKAZE_QR_CONTINUE_ALTITUDE_M: float = 35.0
 
 
 # ==========================================
