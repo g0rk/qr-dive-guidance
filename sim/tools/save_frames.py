@@ -3,6 +3,9 @@
 import os
 import sys
 
+# ⚠️ Depo koku, DOSYANIN KENDI KONUMUNDAN turetilir - mutlak yol yazilmaz.
+#    Eskiden "/mnt/c/Users/<kullanici>/..." diye sabitti: hem baskasinin
+#    makinesinde calismazdi hem de public depoda kullanici adini sizdirirdi.
 SIM = os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 sys.path.insert(0, SIM)
 
