@@ -3,6 +3,11 @@
 
 import math
 
+# Dalis geometrisi hesabi ayri, BAGIMSIZ bir modulde: dive_geometry.py
+# (hicbir bagimliligi yok - PX4, MAVSDK, OpenCV, Gazebo hicbiri gerekmez;
+#  baska projelere oldugu gibi kopyalanabilsin diye boyle ayrildi).
+import dive_geometry
+
 # Connection
 #
 # ⚠️ OLCULDU 2026-08-05: eskiden 14541'di ve PX4 SITL'e HIC BAGLANMIYORDU.
@@ -206,11 +211,17 @@ DIVE_EFFECTIVE_PATH_ANGLE_DEG = 45.0
 #
 #    Dogrulama: yeni tetikle 40 m irtifada hedefe 28.0 m kalir; kamera o
 #    irtifada 14.5-47.9 m arasini gorur -> hedef TAM BORE-SIGHT'TA.
-APPROACH_DIVE_ARM_DISTANCE_M = (
-    (APPROACH_SAFE_ALTITUDE_M - QR_DECODE_ALTITUDE_M)
-    / math.tan(math.radians(DIVE_EFFECTIVE_PATH_ANGLE_DEG))
-    + QR_DECODE_ALTITUDE_M / math.tan(math.radians(abs(DIVE_PITCH_DEG)))
+#    ⚠️ HESAP BURADA DEGIL: dive_geometry.py'de. O modul bagimsiz ve
+#       tasinabilir (hicbir bagimliligi yok); baska projeler kopyalayabilsin
+#       diye ayrildi. Formulu iki yerde tutmak, bu projenin tekrar eden
+#       "ayni sabitin iki kopyasi sessizce ayrilir" hatasi olurdu.
+_DIVE_PROFILE = dive_geometry.DiveProfile(
+    entry_altitude_m=APPROACH_SAFE_ALTITUDE_M,
+    decode_altitude_m=QR_DECODE_ALTITUDE_M,
+    pitch_deg=abs(DIVE_PITCH_DEG),
+    path_angle_deg=DIVE_EFFECTIVE_PATH_ANGLE_DEG,
 )
+APPROACH_DIVE_ARM_DISTANCE_M = dive_geometry.trigger_distance_m(_DIVE_PROFILE)
 
 # Pull-up
 PULL_UP_PITCH_DEG = 25.0
