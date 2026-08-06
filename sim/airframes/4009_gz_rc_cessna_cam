@@ -18,30 +18,31 @@ param set-default SENS_EN_MAGSIM 1
 param set-default SENS_EN_ARSPDSIM 1
 
 # ==========================================================================
-# SIMULASYONA OZEL - GERCEK UCUSTA BUNLAR OLMAMALI
+# SIMULATION ONLY - THESE MUST NOT BE CARRIED INTO A REAL AIRCRAFT
 # ==========================================================================
-# Bunlar olmadan ucak gz SITL'de ARM OLMUYOR. Sebepleri kaynaktan bulundu,
-# tahminle degil.
+# Without them the aircraft DOES NOT ARM under gz SITL. Each reason was found
+# in the PX4 source, not guessed at.
 #
 # FD_ESCS_EN 0
-#   Olculen belirti: "CRITICAL: Preflight Fail: ESC failure detected" ->
-#                    "Failsafe activated" -> "Disarmed by failsafe"
-#   Sebep (FailureDetector.cpp:277-300): arm olur olmaz PX4, tum ESC'lerin
-#   esc_status.esc_armed_flags bayragini set etmesini bekliyor:
+#   Measured symptom: "CRITICAL: Preflight Fail: ESC failure detected" ->
+#                     "Failsafe activated" -> "Disarmed by failsafe"
+#   Cause (FailureDetector.cpp:277-300): the moment it arms, PX4 waits for
+#   every ESC to set its esc_status.esc_armed_flags bit:
 #       all_escs_armed_mask = (1 << esc_count) - 1
 #       is_esc_failure      = (mask != esc_armed_flags)
-#   gz'nin sanal ESC'i bu bayragi yayinlamiyor -> her arm denemesinde
-#   failsafe hemen disarm ediyor.
-#   ⚠️ COM_ARM_CHK_ESCS DEGIL - o denendi, ise yaramadi. Kontrolu acan
-#      parametre FD_ESCS_EN (FailureDetector.hpp:151).
-#   ⚠️ GERCEK UCUSTA ACIK KALMALI: motor/ESC arizasini yakalayan sey bu.
+#   gz's simulated ESC never publishes that flag, so the failsafe disarms the
+#   aircraft immediately on every arm attempt.
+#   ⚠️ NOT COM_ARM_CHK_ESCS - that was tried and did nothing. The parameter
+#      that gates this check is FD_ESCS_EN (FailureDetector.hpp:151).
+#   ⚠️ MUST STAY ENABLED IN REAL FLIGHT: this is the check that catches a
+#      motor or ESC failure.
 param set-default FD_ESCS_EN 0
 
 # COM_RCL_EXCEPT 7 / NAV_RCL_ACT 0
-#   Bu kurulumda RC alicisi yok (headless SITL, komutlar offboard'dan
-#   geliyor). RC kaybi failsafe'i aksi halde gorevi keser.
-#   Bitmask: 1=Mission 2=Hold 4=Offboard -> 7 = ucu birden muaf.
-#   ⚠️ GERCEK UCUSTA sartname/emniyet geregi ACIK olmali.
+#   There is no RC receiver in this setup (headless SITL; the commands arrive
+#   over offboard). Otherwise the RC-loss failsafe cuts the mission short.
+#   Bitmask: 1=Mission 2=Hold 4=Offboard -> 7 exempts all three.
+#   ⚠️ MUST STAY ENABLED IN REAL FLIGHT, for both the rules and safety.
 param set-default COM_RCL_EXCEPT 7
 param set-default NAV_RCL_ACT 0
 # ==========================================================================
