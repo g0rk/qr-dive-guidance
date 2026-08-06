@@ -15,7 +15,8 @@ cd ~/PX4-Autopilot && make px4_sitl gz_rc_cessna_cam
 |---|---|
 | `models/qr_pad` | **Base model.** 2×2 m QR with 45°, 3 m plates on all four sides (rulebook p.17). Kept for reference — the world does *not* use it |
 | `models/qr_pad_v1` | **The model the world uses.** Same geometry, corrected texture |
-| `models/nose_cam` | Nose camera. Derived from PX4's `mono_cam`, **with real hardware parameters** |
+| `camera.yaml` | **The camera, hand written.** `models/nose_cam` is generated from it |
+| `models/nose_cam` | Nose camera, **generated** — do not edit. Derived from PX4's `mono_cam` but with real hardware parameters |
 | `models/rc_cessna_cam` | `rc_cessna` + `nose_cam`, patterned on PX4's `x500_mono_cam` |
 | `models/grass_field` | Textured grass around the pad, so detection is tested against a realistic background |
 | `worlds/qr_target.sdf` | **The flight world.** `default.sdf` + `qr_pad` @ (500 m east, 0) + one diagnostic camera |

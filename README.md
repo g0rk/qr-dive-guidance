@@ -225,7 +225,8 @@ python3 sim/tools/command.py takeoff     # then: command.py align
 
 | | |
 |---|---|
-| `sim/tools/cam_params.py` | Single source of camera parameters — reads the model |
+| `sim/camera.yaml` | **The camera.** Hand written, and everything else is derived from it |
+| `sim/tools/cam_params.py` | Reads that YAML; `--write-model` regenerates the gz model from it |
 | `sim/tools/flight_video.py` | Records the flight and decodes **every frame at full resolution** |
 | `sim/tools/altitude_limit.py` | Continuous seconds spent below a given altitude |
 | `sim/tools/measure_alt.sh` | **One command** for the decode-threshold table above |
@@ -242,6 +243,21 @@ DFM 37UR0234-ML · onsemi AR0234CS · 1/2.6" · 1920×1200 · 3.0 µm · 6 mm le
 HFOV = 2·arctan(5.76 / (2·6)) = 51.28°      VFOV = 30.22°
 ```
 
+**To use a different camera, edit one file.** `sim/camera.yaml` holds the
+sensor width, focal length and resolution — or just an `hfov_deg` if that is
+all you know — and the Gazebo model is generated from it:
+
+```bash
+python3 sim/tools/cam_params.py --write-model
+```
+
+The parameters used to live in the Gazebo model itself, which is the wrong
+shape for anyone who is not running the simulation: they have a lens and a
+datasheet, not an SDF. If the YAML is missing the tools fall back to the
+generated model and *say so*; if both are gone they refuse to run rather than
+invent a default, because a wrong HFOV would flow into the trigger distance,
+the decode table and the measurement rig at once without anything noticing.
+
 The sensor is 16:10, but the delivery format allows only 4:3, 5:4 or 16:9 —
 so the readout is cropped to 1920×1080, and the vertical FOV that matters is
 30.22°, not the 33.40° the full sensor would give.
@@ -251,7 +267,7 @@ so the readout is cropped to 1920×1080, and the vertical FOV that matters is
 ## Tests
 
 ```bash
-python3 -m pytest tests/ -q      # 39 functions / 132 checks
+python3 -m pytest tests/ -q      # 43 functions / 147 checks
 ```
 
 Most tests were written **after a real bug**, and each one opens by

@@ -1,0 +1,79 @@
+# THE CAMERA. One file, hand written, and everything else is derived from it.
+#
+# WHY THIS FILE EXISTS
+# --------------------
+# The camera parameters used to live in models/nose_cam/model.sdf, a Gazebo
+# model file. That works fine as long as you are running the simulation, but
+# it is the wrong shape for anyone who just wants to use the geometry with
+# their own camera: they have a lens and a datasheet, not a gz model. Asking
+# them to hand-edit an SDF to change a focal length is backwards.
+#
+# So the direction is inverted. This file is the source, and
+# models/nose_cam/model.sdf is GENERATED from it:
+#
+#     python3 sim/tools/cam_params.py --write-model
+#
+# Change a number here, regenerate, and the simulation, the diagnostic
+# camera, the measurement rig and the "theoretical px" column of the decode
+# table all move together. There is nowhere for them to drift apart.
+#
+# TO USE YOUR OWN CAMERA: replace the four numbers under `geometry`. Either
+# give sensor_width_mm + focal_length_mm, or give hfov_deg directly if that
+# is all you know. If you give both they are cross-checked and a mismatch is
+# an error, not a warning.
+
+# ---------------------------------------------------------------- identity
+# Not used in any calculation. Here so the numbers below can be traced back
+# to a real part instead of being anonymous constants.
+model: DFM 37UR0234-ML (The Imaging Source)
+sensor: onsemi AR0234CS CMOS
+format: 1/2.6"
+lens: 6 mm
+
+# ---------------------------------------------------------------- geometry
+geometry:
+  # ⚠️ 5.76 AND NOT THE VENDOR'S 5.62. The vendor page contradicts itself:
+  #        1920 px x 3.0 um = 5.76 mm   (vendor says 5.62)
+  #        1200 px x 3.0 um = 3.60 mm   (vendor says 3.20)
+  #        1080 px x 3.0 um = 3.24 mm   <- "3.20" is far closer to this
+  #    so their "effective area" probably is not the full 1920x1200 array.
+  #    The renderer's pinhole model has to agree with the pixel geometry: gz
+  #    samples 1920 columns of 3.0 um, which is 5.76 mm.
+  #
+  #    Size and direction of the uncertainty, which is what actually matters:
+  #        5.76 mm -> 51.28 deg
+  #        5.62 mm -> 50.19 deg      1.09 deg apart, 2.1 %
+  #    A wider HFOV fits more world into the same 1920 pixels, so the target
+  #    looks SMALLER and the decode range comes out WORSE than it really is.
+  #    The error is on the safe side, and the measured 40 m threshold is
+  #    unaffected because it was found in 10 m steps.
+  #
+  #    The definitive answer is not a datasheet argument: put a chessboard in
+  #    front of the camera and run OpenCV calibrateCamera.
+  sensor_width_mm: 5.76
+  focal_length_mm: 6.0
+
+  width: 1920
+
+  # ⚠️ 1080 AND NOT THE SENSOR'S 1200. The sensor is 1920x1200, which is
+  #    16:10, and the delivery format allows only 4:3, 5:4 and 16:9. 16:10 is
+  #    not on the list, so the readout is cropped to 1080 rows (60 off the
+  #    top, 60 off the bottom).
+  #    The consequence is the vertical field of view that the dive geometry
+  #    actually gets: 30.22 deg, where the full sensor would have given
+  #    33.40 deg.
+  height: 1080
+
+# ------------------------------------------------------------- simulation
+# Only used when generating the gz model. Nothing here affects the geometry.
+simulation:
+  # The camera is mounted in the nose, parallel to and fixed with respect to
+  # the longitudinal axis - it looks wherever the nose looks, never down.
+  # That single constraint is what the whole dive geometry follows from.
+  pose: 0 0 0 0 0 0
+  topic: camera
+  update_rate_hz: 30
+  near_clip_m: 0.1
+  far_clip_m: 3000
+  image_format: R8G8B8
+  mass_kg: 0.050

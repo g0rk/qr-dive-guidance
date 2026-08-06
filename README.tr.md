@@ -219,7 +219,8 @@ python3 sim/tools/command.py takeoff
 
 | | Ne yapar |
 |---|---|
-| `sim/tools/cam_params.py` | Kamera parametrelerinin **tek kaynağı** — `model.sdf`'ten okur |
+| `sim/camera.yaml` | **Kameranın kendisi.** Elle yazılır, geri kalan her şey bundan türetilir |
+| `sim/tools/cam_params.py` | O YAML'ı okur; `--write-model` ile gz modelini yeniden üretir |
 | `sim/tools/flight_video.py` | Uçuşu MP4'e alır + **her karede tam çözünürlükte** decode raporu |
 | `sim/tools/altitude_limit.py` | "X metrenin altında kesintisiz kaç saniye kalındı" |
 | `sim/tools/measure_alt.sh` | Yukarıdaki decode eşiği tablosu için **tek komut** |
@@ -238,6 +239,21 @@ HFOV = 2·arctan(5.76 / (2·6)) = 51.28°     VFOV = 30.22°
 
 Sensör 1920×1200 = **16:10**, ama şartname yalnızca 4:3 / 5:4 / 16:9'a izin
 veriyor → 1920×1080'e kırpmak **zorunlu**.
+
+**Başka bir kamera kullanmak için tek dosya düzenlenir.** `sim/camera.yaml`
+sensör genişliği, odak uzaklığı ve çözünürlüğü tutuyor — bilmiyorsan doğrudan
+`hfov_deg` de yazabilirsin — ve Gazebo modeli ondan üretiliyor:
+
+```bash
+python3 sim/tools/cam_params.py --write-model
+```
+
+Parametreler eskiden Gazebo modelinin içinde duruyordu; simülasyonu
+çalıştırmayan biri için yanlış biçimdi: elinde lens ve datasheet var, SDF
+değil. YAML yoksa araçlar üretilmiş modele düşer ve bunu **söyler**; ikisi de
+yoksa varsayılan uydurmak yerine çalışmayı reddederler — yanlış bir HFOV
+tetik mesafesine, decode tablosuna ve ölçüm düzeneğine aynı anda sızar ve
+hiçbir şey fark etmez.
 
 ---
 
