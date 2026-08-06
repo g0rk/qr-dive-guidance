@@ -155,6 +155,27 @@ class MissionController(mp.Process):
             self._drain_perception()
 
             tel = self.telemetry.get()
+
+            # ⚠️ THE SAFETY CHECKER IS DISABLED, AND THIS `if False:` IS
+            #    LOAD-BEARING. Do not "clean it up" by deleting it.
+            #
+            #    safety.py checks three things: telemetry staleness (>1 s),
+            #    minimum relative altitude (5 m) and maximum groundspeed
+            #    (80 m/s). The altitude one has no notion of being on the
+            #    ground. Measured against the real checker with fresh
+            #    telemetry:
+            #        0.0 m  -> ABORT "Altitude too low: 0.0m < min 5.0m"
+            #        2.0 m  -> ABORT
+            #        5.1 m  -> pass
+            #    Only IDLE and ABORT are exempt below, so enabling this as
+            #    written aborts the mission during EVERY takeoff.
+            #
+            #    Turning it on for real means teaching the altitude check
+            #    what "on the ground" and "climbing out" mean. That is a
+            #    design change, not a one-line uncomment.
+            #
+            #    Inherited from the base version. Written up in the README
+            #    under "Known gaps" so it is declared rather than lurking.
             # safety_result = self._safety.check(tel)
 
             #if not safety_result.ok:

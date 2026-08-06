@@ -288,6 +288,35 @@ oluştuğu testin başında anlatılıyor:
 
 ## Bilinen açıklar
 
+**Emniyet denetleyicisi hiç çalışmıyor.** `safety.py` yazılmış, sınıfı
+kurulmuş, sonra atlanmış: `processes/mission_controller.py` çağrıyı
+`if False:` içine almış. Dolayısıyla uyguladığı üç kontrol — telemetri
+bayatlığı (>1 sn), minimum bağıl irtifa (5 m) ve maksimum yer hızı
+(80 m/s) — hiçbir uçuşun hiçbir tick'inde değerlendirilmiyor. Taban
+sürümden geliyor ve hiç geri açılmamış.
+
+Nedenini net yazmak gerekiyor, çünkü "unutulmuş" teşhisi yanlış ve yanlış
+düzeltmeye götürür. Gerçek denetleyiciye karşı ölçüldü:
+
+| bağıl irtifa | sonuç |
+|---|---|
+| 0.0 m — yerde | **ABORT** — "Altitude too low: 0.0m < min 5.0m" |
+| 2.0 m — tırmanışın ilk saniyeleri | **ABORT** |
+| 5.1 m ve üstü | geçer |
+
+Görev denetleyicisi emniyet geçişinden yalnızca `IDLE` ve `ABORT`
+durumlarını muaf tutuyor. Yani kontrol olduğu gibi açılırsa görev **her
+kalkışta** abort eder. `if False:` taşıyıcı bir satır. Gerçekten devreye
+almak, irtifa kontrolüne "yerde olmak" ve "tırmanışta olmak" kavramlarını
+öğretmek demek — tek satır silmek değil.
+
+Bunun listenin başında durmasının sebebi: `telemetry.py` kendi
+varsayılanlarını *"emniyet denetleyicisi hiç güncellenmemiş bir
+TelemetryData'yı reddetsin diye güvenli/geçersiz değerler"* diye
+belgeliyor. Bu cümle, üç dosya ötede kapatılmış bir savunmayı anlatıyor.
+Bugün depoda ona bel bağlayan bir şey yok, ve kapalı olduğunu sınayan bir
+test de yok.
+
 - **Sunucu saati bağlı değil** (`SERVER_TIME_OFFSET_S = 0`). Şartname s.13:
   *"sunucu saati yazmayan ya da farklı bir saat yazan görüntüler
   değerlendirilmeyecektir"* → üretilen kayıtlar hakem için geçersiz.

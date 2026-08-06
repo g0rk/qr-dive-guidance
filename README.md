@@ -299,6 +299,33 @@ explaining how that bug happened:
 
 ## Known gaps
 
+**The safety checker never runs.** `safety.py` is written, instantiated, and
+then skipped: `processes/mission_controller.py` wraps the call in `if False:`,
+so the three checks it implements — telemetry staleness (>1 s), minimum
+relative altitude (5 m) and maximum groundspeed (80 m/s) — evaluate on no
+tick of any flight. This came from the base version and was never re-enabled.
+
+It is worth being precise about why, because "somebody forgot" is the wrong
+diagnosis and would lead to the wrong fix. Measured against the real checker:
+
+| relative altitude | result |
+|---|---|
+| 0.0 m — on the ground | **ABORT** — "Altitude too low: 0.0m < min 5.0m" |
+| 2.0 m — seconds into the climb | **ABORT** |
+| 5.1 m and above | pass |
+
+The mission controller only exempts `IDLE` and `ABORT` from the safety
+transition, so switching the check on as written aborts the mission during
+every single takeoff. The `if False:` is load-bearing. Making it real means
+teaching the altitude check what "on the ground" and "climbing out" are —
+not deleting one line.
+
+The reason this belongs at the top of the list rather than buried: `telemetry.py`
+documents its own defaults as *"safe/invalid values so the safety checker will
+reject a TelemetryData that has never been updated"*. That sentence describes
+a defence that is switched off three files away. Nothing in the repository
+depends on it today, and nothing tests that it is off.
+
 - Everything has been validated in simulation. There is no real flight data,
   and the camera intrinsics come from a datasheet rather than a calibration.
 - The target-area margins (25 % horizontal, 10 % vertical) were read off a
