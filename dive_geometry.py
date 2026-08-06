@@ -250,8 +250,12 @@ def detection_window(profile: DiveProfile, exit_altitude_m: float,
     timing hiccup and the mission scores nothing.
 
     Pass the MEASURED first-detection altitude as `decode_altitude_m` and
-    use the WORST observation, not the best. Using the best observation is
-    how an estimate of ten frames turns into six in practice.
+    use the WORST observation, not the best.
+
+    Measure `fps` as well, do not assume it. In the project this came from,
+    the number written down was 30 while the camera chain actually delivered
+    22.3 -- every frame count derived from it was a third too high, and
+    nothing in the code could have caught that.
     """
     if exit_altitude_m >= profile.decode_altitude_m:
         return (0.0, 0)
@@ -287,6 +291,8 @@ if __name__ == "__main__":
     print()
     hi, lo = visible_altitude_band(cam, dive, floor_altitude_m=30.0)
     print("target visible from %.1f m down to %.1f m" % (hi, lo))
+    # 22.3 fps: counted off the frame reports of five recorded flights, not
+    # taken from a datasheet.
     secs, frames = detection_window(dive, exit_altitude_m=35.0,
-                                    descent_rate_m_s=32.0, fps=30.0)
+                                    descent_rate_m_s=32.0, fps=22.3)
     print("detection window to 35 m exit: %.2f s -> %d frames" % (secs, frames))

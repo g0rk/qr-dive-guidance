@@ -156,13 +156,30 @@ def test_continue_threshold_is_consistent():
 
     # Frames gained: (first_detect - continue_threshold) / descent_rate
     DESCENT_M_S = 32.0      # measured
-    FPS = 30.0
+    # ⚠️ THIS USED TO SAY 30.0, AND THAT WAS NEVER MEASURED. Counted off the
+    #    frame reports of 5 recorded flights (2026-08-06), the camera chain
+    #    delivers 22.34 / 22.37 / 22.41 / 22.48 / 22.76 frames per second.
+    #    Assuming 30 inflated every frame count derived here by a third.
+    FPS = 22.3
     window_s = (config.QR_FIRST_DETECT_ALTITUDE_M - continue_alt) / DESCENT_M_S
     frames = window_s * FPS
-    # ~6 frames on the WORST observation; ~8 on the average one (43.3 m).
-    # The rulebook needs ONE valid frame, so 6 is six times the margin.
-    check("at least 5 valid frames in the worst case", frames >= 5.0,
-          "%.2f s -> ~%.0f frames (with the worst observation, %.1f m)" % (
+    # ⚠️ THE NUMBER THIS ASSERTS CAME DOWN, AND NOT BECAUSE THE DESIGN GOT
+    #    WORSE. It used to claim "at least 5 frames", on FPS=30 and a
+    #    first-detection altitude of 41.7 m. Both inputs were wrong: the
+    #    measured rate is 22.3, and the worst first detection now observed is
+    #    38.1 m. With honest inputs the same arithmetic gives ~2.
+    #
+    #    That model is deliberately pessimistic - it counts only the frames
+    #    between first detection and the continue threshold, whereas the
+    #    aircraft actually keeps descending a little past it. The 5 recorded
+    #    flights collected 5 / 7 / 10 / 10 / 10 valid frames, i.e. the model
+    #    under-predicts by roughly a factor of two.
+    #
+    #    What is being guarded is the sign of the margin: the requirement is
+    #    ONE valid frame, and continuing must buy more than that.
+    check("continuing buys more than the single required frame", frames >= 2.0,
+          "%.2f s -> ~%.1f frames modelled (worst observation %.1f m); "
+          "5 recorded flights collected 5/7/10/10/10" % (
               window_s, frames, config.QR_FIRST_DETECT_ALTITUDE_M))
 
     # ⚠️ The rulebook (p.20) validates within +-1 second of the dive end. The

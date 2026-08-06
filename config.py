@@ -173,13 +173,22 @@ QR_DECODE_ALTITUDE_M = 40.0
 
 # ⚠️ The altitude of FIRST DETECTION measured IN FLIGHT - a different number
 #    from the one above.
-#    Over 5 runs: 41.7 / 42.0 / 42.8 / 43.6 / 46.6 m  (mean 43.3)
-#    It comes out HIGHER than the fixed-camera test (40 m); slant range and
-#    the ROI crop both work in our favour.
-#    ⚠️ USE THE WORST OBSERVATION. The first version of this estimate used the
-#       BEST one (46.6) and concluded "~10 frames" - which was optimistic. The
-#       realistic floor is 41.7.
-QR_FIRST_DETECT_ALTITUDE_M = 41.7
+#
+#    Re-measured 2026-08-06, 5 runs, current texture and code, headless:
+#        38.1 / 40.6 / 42.8 / 42.9 / 44.1 m   (mean 41.7, all 5 read the QR
+#                                              inside the target area)
+#    The previous figure here was 41.7, the worst of an earlier set of 5
+#    (41.7 / 42.0 / 42.8 / 43.6 / 46.6). Those runs used the previous QR
+#    texture, and the two sets overlap heavily on only 5 samples each, so
+#    this is NOT evidence of a regression - it is a wider spread than one
+#    set of five could show.
+#
+#    ⚠️ USE THE WORST OBSERVATION. An earlier version of this estimate used
+#       the BEST one (46.6) and concluded "~10 frames", which was optimistic.
+#       By that same rule the worst now observed, 38.1, is what belongs here:
+#       keeping 41.7 in the face of a measured 38.1 would be the same mistake
+#       in the other direction.
+QR_FIRST_DETECT_ALTITUDE_M = 38.1
 
 # ⚠️ THE DIVE'S ACHIEVED FLIGHT PATH ANGLE - not the commanded pitch.
 #
