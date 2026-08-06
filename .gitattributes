@@ -1,0 +1,28 @@
+# Line endings.
+#
+# Everything in this repository that executes - the shell scripts, the
+# Python, the SDF world files - runs on Linux: WSL, PX4, Gazebo. But the
+# repository is often cloned on Windows, and Git for Windows ships with
+# core.autocrlf=true in its system config, so it rewrites LF to CRLF on
+# checkout.
+#
+# That breaks a shell script silently. bash reads the first line as
+# "set -e\r" and reports:
+#
+#     set: - : invalid option
+#     syntax error: unexpected end of file
+#
+# Nothing looks wrong: git status is clean, the file opens fine in an
+# editor, and the blob in the object database is correct LF. Only the
+# working copy is broken, and the error message points nowhere near the
+# cause. Measured on a Windows clone of this repository: sim/install.sh
+# came out with 26 CR bytes and would not run.
+#
+# Forcing LF on checkout removes the whole class of problem.
+* text=auto eol=lf
+
+# Binaries must never be touched by end-of-line conversion. The QR
+# textures in particular: a single flipped byte changes what the code
+# decodes to, and no test would catch it.
+*.png binary
+*.gif binary
