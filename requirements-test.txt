@@ -1,0 +1,28 @@
+# What the TEST SUITE needs, and nothing else.
+#
+# Deliberately not "everything the project imports". Running the simulation
+# additionally wants PX4, Gazebo Garden and ROS 2 Humble, none of which come
+# from pip and none of which the tests touch - the tests cover geometry,
+# perception and the state machine, all of which run on a bare machine.
+#
+# ⚠️ ultralytics/torch is NOT here on purpose. perception.py imports YOLO
+#    lazily, inside the function that needs it, so nothing in the test path
+#    pulls it in. Listing it would turn a 30 second install into a 2 GB one
+#    for code no test executes.
+#
+# ⚠️ pyzbar needs a SYSTEM library, not just the wheel:
+#        sudo apt-get install libzbar0
+#    Without it the import succeeds and the first decode fails at runtime.
+#
+# Verified in a clean virtualenv on 2026-08-06: these alone give 43 passed.
+
+numpy>=1.24,<2            # cv_bridge in the sim is built against numpy 1.x
+opencv-python-headless    # headless: the tests never open a window
+pyzbar
+qrcode                    # the tests synthesise QR targets to decode
+Pillow                    # qrcode renders through it; make_gif.py needs it too
+PyYAML                    # sim/camera.yaml
+mavsdk                    # vehicle.py imports it at module level
+rich                      # logger.py
+websockets                # the ground-station link
+pytest

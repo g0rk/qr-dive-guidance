@@ -1,7 +1,14 @@
 # qr-dive-guidance
 
+[![tests](https://github.com/g0rk/qr-dive-guidance/actions/workflows/tests.yml/badge.svg)](https://github.com/g0rk/qr-dive-guidance/actions/workflows/tests.yml)
+[![licence: MIT](https://img.shields.io/badge/licence-MIT-blue.svg)](LICENSE)
+
 Autonomous terminal-dive guidance for a fixed-wing UAV onto a 2 m × 2 m
 ground QR target — plus the PX4 + Gazebo environment used to measure it.
+
+**Every number in this README came from a measurement, and the measurement is
+in the repository.** Where a number turned out to be wrong, the correction is
+written down next to it rather than quietly edited out.
 
 *Türkçe dokümantasyon: **[README.tr.md](README.tr.md)***
 

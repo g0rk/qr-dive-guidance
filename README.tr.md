@@ -1,8 +1,14 @@
 # qr-dive-guidance
 
+[![tests](https://github.com/g0rk/qr-dive-guidance/actions/workflows/tests.yml/badge.svg)](https://github.com/g0rk/qr-dive-guidance/actions/workflows/tests.yml)
+[![lisans: MIT](https://img.shields.io/badge/lisans-MIT-blue.svg)](LICENSE)
+
 Sabit kanat bir İHA'yı, yerdeki 2×2 m'lik bir QR hedefine otonom olarak
 dalıp kodu okuyacak ve güvenle çıkacak şekilde yöneten uçuş görev yazılımı —
 ve onu doğrulayan PX4 + Gazebo simülasyon ortamı.
+
+**Buradaki her sayı bir ölçümden geldi ve ölçümün kendisi depoda duruyor.**
+Yanlış çıkan sayılar sessizce düzeltilmedi; düzeltmesi yanına yazıldı.
 
 *English documentation: **[README.md](README.md)***
 

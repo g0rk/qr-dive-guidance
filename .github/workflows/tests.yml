@@ -1,0 +1,57 @@
+# Runs the test suite on a clean machine, on every push.
+#
+# WHY THIS EXISTS: this repository's whole argument is "the numbers came from
+# measurement, not from claims". A README that says 43 tests pass is itself a
+# claim. This makes it checkable by anyone, on hardware that is not mine.
+#
+# WHAT IT DOES NOT COVER, and this matters: the simulation. The decode
+# threshold table and the flight results need PX4, Gazebo Garden and ROS 2,
+# which are not pip-installable and want a GPU to render at any useful speed.
+# Those are reproduced with `bash sim/tools/measure_alt.sh` on a machine that
+# has them. What CI checks is the geometry, the perception code and the state
+# machine - which is most of the code and all of the arithmetic.
+
+name: tests
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+    branches: [main]
+
+jobs:
+  pytest:
+    runs-on: ubuntu-latest
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          # Pinned rather than a matrix, on purpose. numpy is held below 2.x
+          # because the simulation's cv_bridge is built against 1.x, and 1.x
+          # wheels thin out on newer Pythons. A green badge that means
+          # something beats a wider matrix that goes red for packaging
+          # reasons unrelated to this code.
+          python-version: "3.10"
+          cache: pip
+
+      # pyzbar is a wrapper. Without the system library the import succeeds
+      # and the first decode fails at runtime, which is the worst possible
+      # place to find out.
+      - name: install libzbar
+        run: sudo apt-get update && sudo apt-get install -y libzbar0
+
+      - name: install python deps
+        run: pip install -r requirements-test.txt
+
+      - name: pytest
+        run: python -m pytest tests/ -q
+
+      # The portable modules claim to run with the standard library alone.
+      # Cheap to check here, and it is exactly the sort of promise that rots
+      # the moment somebody adds one convenient import.
+      - name: portable modules still run standalone
+        run: |
+          python dive_geometry.py
+          python server_time.py
