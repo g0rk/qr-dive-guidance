@@ -2,63 +2,65 @@
 <sdf version='1.9'>
   <model name='nose_cam'>
     <!--
-      PX4'un mono_cam'inden turetildi. PARAMETRELER DEGISTIRILDI cunku
-      mono_cam bizim donanimi temsil etmiyordu:
+      Derived from PX4's mono_cam. THE PARAMETERS WERE CHANGED because
+      mono_cam does not represent our hardware:
 
-                     mono_cam        nose_cam (gercek donanim)
-        HFOV         1.74 rad =99.7  0.8950 rad = 51.28 derece
-        cozunurluk   640x480         1920x1080
+                     mono_cam        nose_cam (real hardware)
+        HFOV         1.74 rad = 99.7 0.8950 rad = 51.28 deg
+        resolution   640x480         1920x1080
 
       ==========================================================
-      GERCEK KAMERA — ARTIK VARSAYIM DEGIL (dogrulandi 2026-08-05)
+      THE REAL CAMERA - NO LONGER AN ASSUMPTION (confirmed 2026-08-05)
       ==========================================================
-        Model      : DFM 37UR0234-ML (The Imaging Source)
-        Sensor     : onsemi AR0234CS CMOS
-        Format     : 1/2.6"
-        Cozunurluk : 1920 x 1200
-        Piksel     : 3.0 um
-        Efektif alan (ureticiden) : 5.62 mm x 3.20 mm
-        Lens       : 6 mm
+        Model       : DFM 37UR0234-ML (The Imaging Source)
+        Sensor      : onsemi AR0234CS CMOS
+        Format      : 1/2.6"
+        Resolution  : 1920 x 1200
+        Pixel       : 3.0 um
+        Effective area (per the vendor) : 5.62 mm x 3.20 mm
+        Lens        : 6 mm
 
-      Onceki oturum "6mm + 2MP -> 1/2.6 inc (AR0234)" diye VARSAYMISTI.
-      VARSAYIM DOGRU CIKTI. Onceki tum menzil/geometri olcumleri gecerli.
+      An earlier session ASSUMED "6 mm + 2 MP -> 1/2.6 inch (AR0234)".
+      THE ASSUMPTION TURNED OUT TO BE RIGHT, so every range and geometry
+      measurement taken before this confirmation still stands.
 
-      === HFOV neden 0.8950 rad? ===
-      HFOV = 2 * atan(sensor_genisligi / (2 * odak_uzakligi))
-           = 2 * atan(5.76 / (2 * 6)) = 51.28 derece = 0.8950 rad
+      === Why is the HFOV 0.8950 rad? ===
+      HFOV = 2 * atan(sensor_width / (2 * focal_length))
+           = 2 * atan(5.76 / (2 * 6)) = 51.28 deg = 0.8950 rad
 
-      ⚠️ NEDEN 5.76 ve ureticinin dedigi 5.62 DEGIL:
-      Ureticinin sayfasi KENDI ICINDE CELISKILI —
-          1920 px x 3.0 um = 5.76 mm  (ureticinin dedigi: 5.62)
-          1200 px x 3.0 um = 3.60 mm  (ureticinin dedigi: 3.20)
-          1080 px x 3.0 um = 3.24 mm  <- "3.20" buna cok daha yakin
-      Yani "efektif alan" muhtemelen tam 1920x1200 dizisi degil.
-      Renderer ignesi (pinhole) piksel geometrisiyle tutarli olmali:
-      gz 1920 sutun ornekliyor, her sutun 3.0 um -> 5.76 mm.
+      ⚠️ WHY 5.76 AND NOT THE VENDOR'S 5.62:
+      The vendor's own page is SELF-CONTRADICTORY -
+          1920 px x 3.0 um = 5.76 mm  (vendor says 5.62)
+          1200 px x 3.0 um = 3.60 mm  (vendor says 3.20)
+          1080 px x 3.0 um = 3.24 mm  <- "3.20" is far closer to this
+      So the "effective area" is probably not the full 1920x1200 array.
+      The renderer's pinhole must be consistent with the pixel geometry:
+      gz samples 1920 columns, each 3.0 um -> 5.76 mm.
 
-      Belirsizligin BUYUKLUGU ve YONU (onemli olan bu):
-          5.76 mm -> 51.28 derece
-          5.62 mm -> 50.19 derece     fark yalnizca 1.09 derece (%2.1)
-      Genis HFOV = ayni 1920 piksele daha cok dunya sigar = hedef daha
-      KUCUK gorunur. Yani 51.28 kullanmak, gercek 50.19 ise, QR'i
-      %2.1 KUCUK gosterir -> decode menzilini OLDUGUNDAN KOTU tahmin
-      ederiz. Hata GUVENLI yonde. Olculen 40 m decode esigi bundan
-      etkilenmez (esik 10 m'lik basamaklarla olculdu).
-      KESIN CEVAP: kamera elde olunca satranc tahtasi + OpenCV
-      calibrateCamera ile OLCULMELI. Datasheet tartismasi degil, olcum.
+      THE SIZE AND DIRECTION OF THE UNCERTAINTY (this is what matters):
+          5.76 mm -> 51.28 deg
+          5.62 mm -> 50.19 deg     a difference of only 1.09 deg (2.1 %)
+      A wider HFOV means more world fits into the same 1920 pixels, so the
+      target looks SMALLER. Using 51.28 when the truth is 50.19 therefore
+      makes the QR appear 2.1 % smaller -> it UNDERESTIMATES the decode
+      range. The error is on the SAFE side. The measured 40 m decode
+      threshold is unaffected (it was measured in 10 m steps).
+      THE DEFINITIVE ANSWER: once the camera is in hand, MEASURE it with a
+      chessboard and OpenCV calibrateCamera. This is not a datasheet
+      argument to be won, it is a measurement to be taken.
 
-      === Neden 1200 degil 1080 satir? ===
-      Sensor 1920x1200 = 16:10. Sartname s.12 yalnizca 4:3, 5:4 ve 16:9
-      en-boy oranlarina izin veriyor. 16:10 LISTEDE YOK -> hakem videosu
-      16:9 olmak ZORUNDA. Bu yuzden 1080 satira kirpiliyor (ustten ve
-      alttan 60'sar satir atilir).
-      Sonuc: dikey gorus alani VFOV = 2*atan(tan(HFOV/2)*1080/1920)
-                                    = 30.22 derece
-             (tam sensor kullanilsaydi 33.40 derece olurdu — kullanamayiz)
+      === Why 1080 rows and not 1200? ===
+      The sensor is 1920x1200 = 16:10. The rulebook (p.12) allows only 4:3,
+      5:4 and 16:9. 16:10 IS NOT ON THE LIST -> the judge video HAS TO be
+      16:9. So the readout is cropped to 1080 rows (60 rows dropped from the
+      top and 60 from the bottom).
+      The consequence: the vertical field of view is
+          VFOV = 2*atan(tan(HFOV/2)*1080/1920) = 30.22 deg
+          (the full sensor would give 33.40 deg - which we cannot use)
 
-      Sartname s.10: "kamera, hava aracinin burnunda, hava aracinin yatay
-      eksenine paralel ve sabit olacak sekilde konumlandirilmalidir."
-      -> poz 0 0 0 0 0 0 (govde ekseniyle ayni), burna monte edilir.
+      The rulebook (p.10) requires the camera to be mounted in the nose,
+      parallel to and fixed with respect to the aircraft's longitudinal
+      axis. -> pose 0 0 0 0 0 0 (aligned with the body axis), nose-mounted.
     -->
     <pose>0 0 0 0 0 0</pose>
     <self_collide>false</self_collide>
@@ -75,10 +77,10 @@
       <sensor name="imager" type="camera">
         <pose>0 0 0 0 0 0</pose>
         <camera>
-          <!-- 2*atan(5.76/12) = 0.895045 rad = 51.28 derece. Onceki deger
-               0.8954'tu (0.023 derece fark, 70 px'lik QR'da 0.03 px —
-               olculebilir bir etkisi yok, yalnizca yukaridaki turetmeyle
-               birebir tutsun diye duzeltildi). -->
+          <!-- 2*atan(5.76/12) = 0.895045 rad = 51.28 deg. The previous
+               value was 0.8954 (a difference of 0.023 deg, which is 0.03 px
+               on a 70 px QR - no measurable effect; it was corrected only so
+               that it matches the derivation above exactly). -->
           <horizontal_fov>0.8950</horizontal_fov>
           <image>
             <width>1920</width>

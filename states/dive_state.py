@@ -47,23 +47,24 @@ class DiveState(BaseState):
 
     def __init__(self) -> None:
         self._entry_time: float = 0.0
-        self._entry_wall: float = 0.0     # duvar saati - kamikaze paketi icin
+        self._entry_wall: float = 0.0     # wall clock - needed for the mission packet
         self._entry_alt_m: float = 0.0
         self._live = Live("", refresh_per_second=10, transient=True)
-        # QR okunduktan sonra devam etme mantigi icin:
-        self._qr_hit: dict | None = None   # en SON gecerli (AV ici) tespit
-        self._qr_hit_count: int = 0        # kac karede gecerli tespit oldu
-        self._qr_first_alt_m: float = 0.0  # ilk gecerli tespitin irtifasi
+        # State for "keep going after the QR is read":
+        self._qr_hit: dict | None = None   # the LATEST valid (in target area) detection
+        self._qr_hit_count: int = 0        # how many frames produced a valid detection
+        self._qr_first_alt_m: float = 0.0  # altitude of the first valid detection
 
     def _fresh_qr(self, mission: MissionController):
         """
-        Yalnizca BU dalis sirasinda gorulmus ve BAYAT OLMAYAN QR'i dondur. [P4]
+        Return a QR seen DURING THIS DIVE that is not STALE.
 
-        Iki filtre de emniyet geregi:
-          - t > _entry_time : yaklasma fazinda okunan eski bir QR dalisi
-            daha baslamadan bitirmesin.
-          - yas <= KAMIKAZE_QR_MAX_AGE_S : bayat konumla dalis duzeltmek,
-            hedefin YANINA yonelmek demektir. Veri eskiyse kor dalisa donulur.
+        Both filters exist for safety:
+          - t > _entry_time : an old QR read during the approach must not end
+            a dive that has barely started.
+          - age <= KAMIKAZE_QR_MAX_AGE_S : correcting a dive from a stale
+            position means steering at where the target USED to be. When the
+            data is old we fall back to a blind dive.
         """
         qr = getattr(mission, "qr_result", None)
         if not qr or not qr.get("data") or "t" not in qr or "error" not in qr:
@@ -75,59 +76,63 @@ class DiveState(BaseState):
         return qr
 
     def _gps_roll(self, tel):
-        """QR yokken hedefe YANAL GUDUM: kerteriz farki -> roll (bank-to-turn).
+        """Lateral guidance when no QR is visible: bearing error -> roll.
 
-        NEDEN VAR: dalis eskiden sabit attitude tutuyordu (roll=0) ve hedefi
-        42.5 m iskaliyordu (olculdu 2026-08-05). QR pad 2x2 m oldugu icin
-        pad kadraja hic girmiyor, dolayisiyla gorsel merkezleme de devreye
-        giremiyordu - tavuk-yumurta.
+        WHY IT EXISTS: the dive used to hold a fixed attitude (roll=0) and
+        missed the target by 42.5 m (measured 2026-08-05). The QR pad is only
+        2x2 m, so it never entered the frame at all - which meant the visual
+        centering could never engage either. Chicken and egg.
 
-        Doner: (roll_cmd, kerteriz_hatasi_deg, mesafe_m) veya hesaplanamazsa
-        (None, None, None).
+        Returns: (roll_cmd, bearing_error_deg, distance_m), or
+        (None, None, None) when it cannot be computed.
 
-        ⚠️ SINIRLAR: dik dalista roll, seviye ucustaki kadar dogrudan bir
-           yon degisimi uretmez - burun 55 derece asagiyken tasima vektoru
-           yatiya yakin doner. Bu yuzden kazanc ve sinir OLCUMLE
-           ayarlanmali, teoriyle degil. Ilk degerler bir baslangictir.
+        ⚠️ LIMITS: in a steep dive, roll does not change heading as directly
+           as it does in level flight - with the nose 55 degrees down the lift
+           vector turns closer to sideways. So the gain and the limit have to
+           be tuned BY MEASUREMENT, not from theory. The initial values are a
+           starting point, nothing more.
         """
         if not config.KAMIKAZE_GPS_GUIDANCE:
             return None, None, None
 
-        # ⚠️ SAVUNMACI OKUMA. Eksik bir alan yuzunden DALISIN ORTASINDA
-        #    AttributeError firlatmak kabul edilemez: update() coker, arac
-        #    komutsuz kalir. Alan yoksa kor dalisa DUSULUR, cokulmez.
+        # ⚠️ DEFENSIVE READS. Raising an AttributeError over a missing field
+        #    IN THE MIDDLE OF THE DIVE is unacceptable: update() would crash
+        #    and the aircraft would be left without commands. If a field is
+        #    absent we FALL BACK to a blind dive rather than crash.
         lat = getattr(tel, "latitude_deg", None)
         lon = getattr(tel, "longitude_deg", None)
         hdg = getattr(tel, "heading_deg", None)
         if lat is None or lon is None or hdg is None:
             return None, None, None
 
-        # Telemetri gecerli mi? 0/0 konum "Gine Korfezi" degil "veri yok"
-        # demektir; oradan kerteriz hesaplamak ucagi Afrika'ya yoneltirdi.
+        # Is the telemetry valid? A 0/0 position does not mean "Gulf of
+        # Guinea", it means "no data" - computing a bearing from it would aim
+        # the aircraft at Africa.
         if not lat and not lon:
             return None, None, None
 
-        mesafe = distance_m(
+        distance = distance_m(
             lat, lon,
             config.TARGET_LATITUDE_DEG, config.TARGET_LONGITUDE_DEG,
         )
-        # ⚠️ Cok yakinken kerteriz anlamsizlasir: birkac metre kala kucucuk
-        #    bir konum hatasi kerteriz'i 180 derece cevirir ve ucak son anda
-        #    sertce yatar. O bolgede duzeltme YAPILMAZ.
-        if mesafe < config.KAMIKAZE_GPS_MIN_DISTANCE_M:
-            return None, None, mesafe
+        # ⚠️ Very close in, the bearing stops meaning anything: within a few
+        #    metres a tiny position error swings it by 180 degrees and the
+        #    aircraft banks hard at the last moment. No correction is applied
+        #    inside that radius.
+        if distance < config.KAMIKAZE_GPS_MIN_DISTANCE_M:
+            return None, None, distance
 
-        hedef_kerteriz = bearing_deg(
+        target_bearing = bearing_deg(
             lat, lon,
             config.TARGET_LATITUDE_DEG, config.TARGET_LONGITUDE_DEG,
         )
-        hata = angle_error_deg(hedef_kerteriz, hdg)
+        error = angle_error_deg(target_bearing, hdg)
         roll = _clamp(
-            hata * config.KAMIKAZE_GPS_ROLL_GAIN,
+            error * config.KAMIKAZE_GPS_ROLL_GAIN,
             -config.KAMIKAZE_GPS_MAX_ROLL_DEG,
             +config.KAMIKAZE_GPS_MAX_ROLL_DEG,
         )
-        return roll, hata, mesafe
+        return roll, error, distance
 
     async def on_enter(self, mission: MissionController) -> None:
         self._live.start()
@@ -142,8 +147,8 @@ class DiveState(BaseState):
             raise ValueError("Insufficient altitude for dive")
 
         self._entry_time = time.monotonic()
-        # Duvar saati burada yakalanmali; sonradan geriye donuk hesaplamak
-        # zaman kaymasina acik olur. Kamikaze paketinin baslangic zamani.
+        # The wall clock has to be captured here; reconstructing it afterwards
+        # is open to drift. This is the mission packet's start time.
         self._entry_wall = time.time()
         self._entry_alt_m = tel.rel_alt_m
 
@@ -176,25 +181,26 @@ class DiveState(BaseState):
 
         # 2. Altitude floor guard — trigger pull-up
         if tel.rel_alt_m <= config.DIVE_PULL_UP_ALTITUDE_M:
-            # ⚠️ TABANA GELIRKEN ELIMIZDE GECERLI TESPIT VARSA PAKETI KAYBETME.
-            #    Normalde 35 m'lik devam esigi (3b) once tetiklenir. Ama
-            #    hizli bir alcalmada tek tikte 36 -> 29 m atlanabilir ve o
-            #    zaman ONCE burasi calisir. Paketi burada da damgalamazsak
-            #    okunmus bir QR sessizce cope giderdi.
+            # ⚠️ IF WE REACH THE FLOOR HOLDING A VALID DETECTION, DO NOT LOSE
+            #    THE PACKET. Normally the 35 m continue threshold (3b) fires
+            #    first. But in a fast descent a single tick can jump from 36 m
+            #    to 29 m, and then THIS branch runs first. Without stamping
+            #    the packet here too, a QR that was actually read would be
+            #    thrown away in silence.
             if self._qr_hit is not None:
                 self._qr_hit["dive_end_wall"] = time.time()
                 self._qr_hit["qr_frames"] = self._qr_hit_count
                 self._qr_hit["qr_first_alt_m"] = self._qr_first_alt_m
                 mission.kamikaze_hit = self._qr_hit
                 logger.info(
-                    "Taban irtifasi (%.1fm) devam esiginden ONCE geldi -- "
-                    "paket yine de kaydedildi (%d gecerli kare, QR=%r)",
+                    "Altitude floor (%.1fm) reached BEFORE the continue "
+                    "threshold -- packet recorded anyway (%d valid frames, QR=%r)",
                     tel.rel_alt_m, self._qr_hit_count,
                     self._qr_hit.get("qr_text"),
                 )
             else:
                 logger.info(
-                    "Pull-up altitude reached (%.1fm), QR OKUNAMADI. -> PULL_UP",
+                    "Pull-up altitude reached (%.1fm), QR NOT READ. -> PULL_UP",
                     tel.rel_alt_m,
                 )
             from states.pull_up_state import PullUpState
@@ -204,22 +210,24 @@ class DiveState(BaseState):
 
         qr = self._fresh_qr(mission)
 
-        # 3. Gorev hedefi tamamlandi mi?  [P4]
-        #    ⚠️ SARTNAME s.18: vurus tespiti icin QR'in OKUNMASI YETMEZ,
-        #       "QR kod sinirlarinin TAMAMI Hedef Vurus Alani'nda olmalidir"
-        #       ve "sinir tespit degerlendirmesi icin TOLERANS PAYI MEVCUT
-        #       DEGILDIR". Bu yuzden gecis `in_av` sartina bagli. AV disinda
-        #       okunan QR merkezlemede kullanilir (hedefe yonelmek icin) ama
-        #       gorevi tamamlamis SAYILMAZ - erken pull-up puani kaybettirir.
-        # 3a. GECERLI TESPITI KAYDET (ama hemen cikma).
-        #     Her yeni tespit oncekinin uzerine yazilir: ucak alcaldikca QR
-        #     buyur, yani SON tespit en guvenilir olanidir.
+        # 3. Has the mission objective been met?
+        #    ⚠️ The rulebook (p.18) is explicit: DECODING the QR is not
+        #       enough. "The QR code's boundaries must lie ENTIRELY within the
+        #       target area", and "no tolerance is allowed for the boundary
+        #       assessment". So the transition is gated on `in_av`. A QR read
+        #       outside the target area is still used for centering (to steer
+        #       toward it) but does NOT count as mission complete - pulling up
+        #       early on one would throw the score away.
+        # 3a. RECORD THE VALID DETECTION, but do not exit yet.
+        #     Each new detection overwrites the previous one: the QR grows as
+        #     the aircraft descends, so the LAST detection is the most
+        #     reliable.
         if qr is not None and qr.get("in_av"):
             if self._qr_hit is None:
                 self._qr_first_alt_m = tel.rel_alt_m
                 logger.info(
-                    "QR okundu ve AV ICINDE (%r) @ alt=%.1fm -- %.1f m'ye "
-                    "kadar DEVAM edilecek (daha cok gecerli kare icin)",
+                    "QR read and INSIDE the target area (%r) @ alt=%.1fm -- "
+                    "continuing down to %.1f m (to collect more valid frames)",
                     qr.get("data"), tel.rel_alt_m,
                     config.KAMIKAZE_QR_CONTINUE_ALTITUDE_M,
                 )
@@ -228,21 +236,21 @@ class DiveState(BaseState):
                 "dive_start_wall": self._entry_wall,
                 "qr_text":         qr.get("data"),
                 "qr_box":          qr.get("box"),
-                "entry_alt_m":     self._entry_alt_m,   # sartname: >=100 m kaniti
+                "entry_alt_m":     self._entry_alt_m,   # evidence of the >=100 m rule
                 "alt_m":           tel.rel_alt_m,
             }
 
-        # 3b. TESPIT VAR ve DEVAM ESIGINE INILDI -> cik.
+        # 3b. WE HAVE A DETECTION and reached the continue threshold -> exit.
         #
-        # ⚠️ Kontrol `qr is not None` blogunun DISINDA olmali: tespitten
-        #    sonra QR'i kaybetsek bile (bulaniklik, kadraj) cikis yapilmali.
-        #    Ice alsaydik, son karede QR gorunmezse ucak dalmaya devam
-        #    ederdi - sessiz ve olumcul.
+        # ⚠️ This check must sit OUTSIDE the `qr is not None` block: even if
+        #    the QR is lost after the detection (blur, framing), the exit must
+        #    still happen. Nested inside, a QR missing on the final frame
+        #    would leave the aircraft diving on - silently and fatally.
         #
-        # dive_end_wall BURADA damgalanir, ilk tespitte degil: sartnamenin
-        # +-1 sn penceresi DALIS BITIS zamanina gore tanimli ve dalis
-        # gercekten burada bitiyor. Ilk tespit bu andan ~0.34 s once,
-        # yani pencerenin rahatca icinde.
+        # dive_end_wall is stamped HERE, not at the first detection: the
+        # rulebook's +-1 s window is defined around the DIVE END time, and the
+        # dive really does end here. The first detection is about 0.34 s
+        # earlier, comfortably inside the window.
         if (self._qr_hit is not None and config.KAMIKAZE_PULLUP_ON_QR
                 and tel.rel_alt_m <= config.KAMIKAZE_QR_CONTINUE_ALTITUDE_M):
             self._qr_hit["dive_end_wall"] = time.time()
@@ -250,8 +258,8 @@ class DiveState(BaseState):
             self._qr_hit["qr_first_alt_m"] = self._qr_first_alt_m
             mission.kamikaze_hit = self._qr_hit
             logger.info(
-                "DEVAM tamamlandi @ alt=%.1fm -> PULL_UP  "
-                "(ilk tespit %.1f m, toplam %d gecerli kare, QR=%r)",
+                "CONTINUE complete @ alt=%.1fm -> PULL_UP  "
+                "(first detection at %.1f m, %d valid frames total, QR=%r)",
                 tel.rel_alt_m, self._qr_first_alt_m, self._qr_hit_count,
                 self._qr_hit.get("qr_text"),
             )
@@ -260,35 +268,36 @@ class DiveState(BaseState):
             await mission._change_state(PullUpState())
             return
 
-        # 4. Attitude komutu - UC KATMANLI ONCELIK
-        #      1) QR gorunuyor      -> gorsel merkezleme (en hassas)
-        #      2) QR yok            -> GPS yanal gudum
-        #      3) telemetri de yok  -> kor dalis (eski davranis)
+        # 4. Attitude command - THREE LAYERS, IN PRIORITY ORDER
+        #      1) QR visible     -> visual centering (most precise)
+        #      2) no QR          -> GPS lateral guidance
+        #      3) no telemetry   -> blind dive (the original behaviour)
         roll_cmd = config.DIVE_ROLL_DEG
         pitch_cmd = config.DIVE_PITCH_DEG
-        centering = "kor"
+        centering = "blind"
 
         if qr is None:
-            gps_roll, kerteriz_hatasi, mesafe = self._gps_roll(tel)
+            gps_roll, bearing_error, distance = self._gps_roll(tel)
             if gps_roll is not None:
                 roll_cmd = gps_roll
-                centering = "GPS hata=%+.1f deg mesafe=%.0f m" % (
-                    kerteriz_hatasi, mesafe)
-            elif mesafe is not None:
-                # Hedefe cok yakin: kerteriz anlamsiz, duzeltme dondurulur.
-                centering = "GPS donduruldu (mesafe=%.0f m)" % mesafe
+                centering = "GPS err=%+.1f deg dist=%.0f m" % (
+                    bearing_error, distance)
+            elif distance is not None:
+                # Too close to the target: the bearing is meaningless, so the
+                # correction is frozen.
+                centering = "GPS frozen (dist=%.0f m)" % distance
 
         if qr is not None and config.KAMIKAZE_QR_CENTERING:
-            ex, ey = qr["error"]        # normalize [-1,+1]
+            ex, ey = qr["error"]        # normalised to [-1,+1]
 
-            # ex > 0 (QR sagda) -> saga yat -> POZITIF roll
+            # ex > 0 (QR to the right) -> bank right -> POSITIVE roll
             roll_cmd = _clamp(
                 ex * config.KAMIKAZE_QR_ROLL_GAIN,
                 -config.KAMIKAZE_QR_MAX_ROLL_DEG,
                 +config.KAMIKAZE_QR_MAX_ROLL_DEG,
             )
-            # ey > 0 (QR asagida) -> burnu daha asagi -> pitch DAHA NEGATIF.
-            # DIVE_PITCH_DEG etrafinda dar bir bantta sinirlanir.
+            # ey > 0 (QR below) -> nose further down -> pitch MORE NEGATIVE.
+            # Clamped to a narrow band around DIVE_PITCH_DEG.
             pitch_cmd = _clamp(
                 config.DIVE_PITCH_DEG - ey * config.KAMIKAZE_QR_PITCH_GAIN,
                 config.DIVE_PITCH_DEG - config.KAMIKAZE_QR_MAX_PITCH_DELTA_DEG,
@@ -296,8 +305,8 @@ class DiveState(BaseState):
             )
             centering = "QR ex=%+.2f ey=%+.2f in_av=%s" % (ex, ey, qr.get("in_av"))
 
-        # Attitude komutu HER TICK gonderilmeli - MAVSDK offboard, komut akisi
-        # kesilirse onceki moda doner.
+        # The attitude command must be sent EVERY TICK - MAVSDK offboard
+        # reverts to the previous mode if the command stream stops.
         try:
             await mission.vehicle.set_attitude(
                 roll_deg=roll_cmd,
@@ -318,9 +327,9 @@ class DiveState(BaseState):
             f"pitch={tel.pitch_deg} "
             f"v_ground={ground_speed_m_s(tel.vel_north_m_s, tel.vel_east_m_s)} m/s "
             f"v_down={tel.vel_down_m_s} m/s "
-            # ⚠️ Hangi katmanin surdugu LOGLANMALI: yoksa "dalis neden
-            #    iskaladi" sorusu kayittan cevaplanamaz.
-            f"| gudum={centering} roll={roll_cmd:+.1f} pitch_cmd={pitch_cmd:+.1f}"
+            # ⚠️ WHICH LAYER IS FLYING MUST BE LOGGED: without it, "why did the
+            #    dive miss" cannot be answered from the recording.
+            f"| guidance={centering} roll={roll_cmd:+.1f} pitch_cmd={pitch_cmd:+.1f}"
         )
 
         self._live.update(dive_text)

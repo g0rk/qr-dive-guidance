@@ -1,21 +1,22 @@
 #!/usr/bin/env python3
-"""Kamera parametrelerinin TEK KAYNAGI.
+"""THE SINGLE SOURCE of camera parameters.
 
-NEDEN BU DOSYA VAR
-------------------
-HFOV degeri once UC ayri yerde sabit yaziliydi:
-    models/nose_cam/model.sdf   <- ucagin kamerasi (GERCEK KAYNAK)
-    tools/build_world.py           <- tani kamerasi uretimi
-    tools/measure_alt.py           <- piksel/derece hesabi
+WHY THIS FILE EXISTS
+--------------------
+The HFOV used to be written out as a literal in THREE separate places:
+    models/nose_cam/model.sdf   <- the aircraft's camera (THE REAL SOURCE)
+    tools/build_world.py        <- generating the diagnostic camera
+    tools/measure_alt.py        <- the pixels-per-degree arithmetic
 
-Ayni fiziksel sabitin uc kopyasi. Biri degisip digerleri kalirsa:
-  - tani kamerasi ucagin kamerasini temsil etmez,
-  - olcum tablosunun "teorik px" sutunu yanlis cikar,
-ve bunu HICBIR test yakalamaz - her uc dosya da tek basina gecerli kalir.
-Bu, bu projede daha once yasanmis bir hata sinifi (bkz. config.py'deki
-APPROACH_DIVE_ARM_DISTANCE_M turetmesinin gerekcesi).
+Three copies of one physical constant. If one of them changes and the others
+do not:
+  - the diagnostic camera no longer represents the aircraft's camera,
+  - the "theoretical px" column of the measurement table comes out wrong,
+and NO TEST catches it, because all three files stay perfectly valid on their
+own. This is a failure mode this project has already lived through once (see
+the reasoning behind APPROACH_DIVE_ARM_DISTANCE_M in config.py).
 
-Artik herkes model.sdf'i okur.
+Now everyone reads model.sdf.
 """
 import math
 import pathlib
@@ -28,44 +29,44 @@ CAM_SDF = (pathlib.Path(__file__).resolve().parent.parent
 def _cam_node():
     node = ET.parse(CAM_SDF).getroot().find(".//sensor/camera")
     if node is None:
-        raise SystemExit("HATA: %s icinde <sensor><camera> yok" % CAM_SDF)
+        raise SystemExit("ERROR: no <sensor><camera> in %s" % CAM_SDF)
     return node
 
 
 def hfov_rad():
-    """Yatay gorus acisi (radyan). Bulunamazsa GURULTULU patlar."""
+    """Horizontal field of view, in radians. Fails LOUDLY if absent."""
     n = _cam_node().find("horizontal_fov")
     if n is None or not n.text:
-        raise SystemExit("HATA: %s icinde horizontal_fov yok" % CAM_SDF)
+        raise SystemExit("ERROR: no horizontal_fov in %s" % CAM_SDF)
     return float(n.text)
 
 
 def image_size():
-    """(genislik, yukseklik) piksel."""
+    """(width, height) in pixels."""
     img = _cam_node().find("image")
     if img is None:
-        raise SystemExit("HATA: %s icinde <image> yok" % CAM_SDF)
+        raise SystemExit("ERROR: no <image> in %s" % CAM_SDF)
     return int(img.find("width").text), int(img.find("height").text)
 
 
 def pixels_per_degree():
-    """Yatayda derece basina piksel. Kucuk aci yaklasimiyla kullanilir."""
+    """Horizontal pixels per degree, under the small-angle approximation."""
     w, _ = image_size()
     return w / math.degrees(hfov_rad())
 
 
 def vfov_rad():
-    """Dikey gorus acisi. HFOV ve en-boy oranindan turetilir."""
+    """Vertical field of view, derived from the HFOV and the aspect ratio."""
     w, h = image_size()
     return 2 * math.atan(math.tan(hfov_rad() / 2) * h / w)
 
 
 if __name__ == "__main__":
     w, h = image_size()
-    print("kaynak      : %s" % CAM_SDF)
-    print("HFOV        : %.6f rad = %.2f derece" % (hfov_rad(), math.degrees(hfov_rad())))
-    print("VFOV        : %.6f rad = %.2f derece" % (vfov_rad(), math.degrees(vfov_rad())))
-    print("cozunurluk  : %d x %d  (en-boy %.4f)" % (w, h, w / h))
-    print("piksel/derece: %.2f" % pixels_per_degree())
-    print("geri-hesap sensor genisligi (6 mm lens): %.3f mm"
+    print("source       : %s" % CAM_SDF)
+    print("HFOV         : %.6f rad = %.2f deg" % (hfov_rad(), math.degrees(hfov_rad())))
+    print("VFOV         : %.6f rad = %.2f deg" % (vfov_rad(), math.degrees(vfov_rad())))
+    print("resolution   : %d x %d  (aspect %.4f)" % (w, h, w / h))
+    print("pixels/degree: %.2f" % pixels_per_degree())
+    print("back-computed sensor width (6 mm lens): %.3f mm"
           % (2 * 6.0 * math.tan(hfov_rad() / 2)))

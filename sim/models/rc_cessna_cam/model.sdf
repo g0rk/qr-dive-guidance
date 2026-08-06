@@ -1,7 +1,7 @@
 <?xml version="1.0" encoding="UTF-8"?>
 <sdf version='1.9'>
   <model name='rc_cessna_cam'>
-    <!-- Kalip PX4'un x500_mono_cam modelinden alindi. -->
+    <!-- Patterned on PX4's own x500_mono_cam model. -->
     <include merge='true'>
       <uri>rc_cessna</uri>
     </include>
@@ -12,11 +12,12 @@
     </include>
 
     <!--
-      Kamera burunda ve GOVDE EKSENIYLE PARALEL (sartname s.10).
-      x=0.45 govdenin onu; z=0.05 hafif yukarida.
-      ⚠️ Bu poz gozle dogrulanmali - mesh 0.1 olcekli, burnun tam yeri
-         olculmedi. Kameranin YONELIMI (0 0 0) kritik olan; konum birkac
-         santim kaysa sonuc degismez.
+      The camera sits in the nose, PARALLEL TO THE BODY AXIS (rulebook p.10).
+      x=0.45 is the front of the fuselage; z=0.05 lifts it slightly.
+      ⚠️ This pose should be checked by eye - the mesh is at 0.1 scale and
+         the exact position of the nose was never measured. What matters is
+         the camera's ORIENTATION (0 0 0); a few centimetres of offset in
+         position changes nothing.
     -->
     <joint name="CameraJoint" type="fixed">
       <parent>base_link</parent>

@@ -159,10 +159,11 @@ class Vehicle:
 
     def field_elevation_m(self) -> float:
         """
-        Kalkis sahasinin deniz seviyesine gore yuksekligi (m).  [P2]
+        Elevation of the launch site above sea level, in metres.
 
-        MAVSDK `position` hem mutlak (AMSL) hem goreli irtifayi veriyor;
-        farklari home noktasinin AMSL yuksekligidir.
+        MAVSDK's `position` reports both the absolute (AMSL) and the relative
+        altitude; the difference between them is the AMSL elevation of the
+        home point.
         """
         tel = self._telemetry_store.get()
         return tel.abs_alt_m - tel.rel_alt_m
@@ -170,38 +171,38 @@ class Vehicle:
     async def goto_location_rel(self, lat: float, lon: float, rel_alt_m: float,
                                 yaw_deg: float = 0.0) -> None:
         """
-        goto_location'in GORELI irtifa alan hali.  [P2]
+        goto_location, but taking a RELATIVE altitude.
 
-        ⚠️ NEDEN VAR: `action.goto_location()` MAVSDK'de **MUTLAK (AMSL)**
-           irtifa bekler. Projedeki diger her irtifa ise GORELI:
-           TAKEOFF_ALTITUDE_M (MAVSDK takeoff zaten goreli alir),
-           DIVE_MIN_ENTRY_ALTITUDE_M, DIVE_PULL_UP_ALTITUDE_M ve tum
-           guvenlik kontrolleri `tel.rel_alt_m` uzerinden calisiyor.
-           Sartname de goreli konusuyor (s.18: "kalkis pistine goreli
-           olarak en az 100 m").
+        ⚠️ WHY THIS EXISTS: MAVSDK's `action.goto_location()` expects an
+           **ABSOLUTE (AMSL)** altitude. Every other altitude in this project
+           is RELATIVE: TAKEOFF_ALTITUDE_M (MAVSDK's takeoff already takes a
+           relative one), DIVE_MIN_ENTRY_ALTITUDE_M, DIVE_PULL_UP_ALTITUDE_M
+           and all the safety checks work off `tel.rel_alt_m`. The rulebook
+           speaks in relative terms too (p.18: "at least 100 m relative to the
+           runway").
 
-           Ikisi karistirildiginda sonuc SESSIZ ve olumcul:
-           yaklasma 100 m AMSL'e komut ediyor, dalis izni ise
-           rel_alt >= esik ariyordu. Saha deniz seviyesinde DEGILSE
-           rel_alt her zaman daha kucuk kalir ve dalis HIC tetiklenmez.
+           Confusing the two fails SILENTLY and fatally: the approach commands
+           100 m AMSL while the dive permission tests rel_alt >= threshold. At
+           any site NOT at sea level, rel_alt stays permanently lower and the
+           dive NEVER triggers.
 
-           ⚠️ SIMULASYONDA DOGRUDAN ISIRIYOR: PX4 SITL'in varsayilan
-           dunyasi Zurih, **488 m AMSL**. Duzeltilmeden "100 m AMSL"e
-           ucmak, yerin 388 m ALTINA komut vermek demek.
+           ⚠️ IT BITES IMMEDIATELY IN SIMULATION: the PX4 SITL default world
+           is Zurich, at **488 m AMSL**. Flying to "100 m AMSL" without the
+           conversion means commanding a point 388 m BELOW the ground.
 
-           Kural: MAVSDK sinirinda cevirir, config'te goreli tutariz.
+           The rule: convert at the MAVSDK boundary, keep config relative.
         """
         tel = self._telemetry_store.get()
         if tel.last_update_time == 0.0:
             raise VehicleCommandError(
-                "goto_location_rel: telemetri henuz gelmedi, saha yuksekligi "
-                "bilinmiyor - goreli irtifa mutlaga cevrilemez"
+                "goto_location_rel: no telemetry yet, so the field elevation "
+                "is unknown - a relative altitude cannot be converted to absolute"
             )
 
         elevation = self.field_elevation_m()
         abs_alt_m = elevation + rel_alt_m
         logger.info(
-            "goto_location_rel: rel=%.1fm + saha=%.1fm AMSL -> mutlak=%.1fm",
+            "goto_location_rel: rel=%.1fm + field=%.1fm AMSL -> absolute=%.1fm",
             rel_alt_m, elevation, abs_alt_m,
         )
         await self.goto_location(lat, lon, abs_alt_m, yaw_deg)

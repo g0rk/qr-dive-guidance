@@ -1,13 +1,14 @@
-# states/pursuit_state.py — Offboard attitude ile hedefe yaklaşma.
+# states/pursuit_state.py — Close on a moving target using offboard attitude.
 #
-# Her tick'te:
-#   1. mission.target'tan hedef konum okunur
-#   2. Kendi konumumuzdan hedefe bearing hesaplanır
-#   3. Bearing farkına göre roll set-point üretilir (yaw için bank-to-turn)
-#   4. Kendi irtifamız TARGET_ALT_M'de tutulacak şekilde pitch set-point üretilir
-#   5. Max throttle ile ileri itilir (hız config.PURSUIT_THROTTLE'a bağlı)
+# Every tick:
+#   1. Read the target position from mission.target
+#   2. Compute the bearing from our own position to the target
+#   3. Turn the bearing error into a roll set-point (bank-to-turn for yaw)
+#   4. Turn the altitude error into a pitch set-point, holding TARGET_ALT_M
+#   5. Push forward at a fixed throttle (config.PURSUIT_THROTTLE)
 #
-# Çıkış yok — dışarıdan komut (hold, abort vb.) bekler.
+# There is no exit condition — the state waits for an external command
+# (hold, abort, and so on).
 
 from __future__ import annotations
 
@@ -28,12 +29,12 @@ import config
 
 logger = logging.getLogger("PURSUIT")
 
-# Sabit irtifa hedefi (metre). İstersen config.py'ye taşı.
+# Fixed altitude target (metres). Move this into config.py if it needs tuning.
 TARGET_ALT_M = 100.0
 
 
 def _bearing_deg(lat1: float, lon1: float, lat2: float, lon2: float) -> float:
-    """İki GPS noktası arasındaki yönü (0-360°) döner."""
+    """Bearing from one GPS point to another, in degrees (0-360)."""
     lat1_r = math.radians(lat1)
     lat2_r = math.radians(lat2)
     d_lon  = math.radians(lon2 - lon1)
@@ -47,13 +48,13 @@ def _bearing_deg(lat1: float, lon1: float, lat2: float, lon2: float) -> float:
 
 
 def _angle_diff(a: float, b: float) -> float:
-    """a'dan b'ye en kısa açı farkı (-180, +180]."""
+    """Shortest signed angle from a to b, in (-180, +180]."""
     diff = (b - a + 180.0) % 360.0 - 180.0
     return diff
 
 
 def _haversine_m(lat1: float, lon1: float, lat2: float, lon2: float) -> float:
-    """İki nokta arasındaki yüzey mesafesi (metre)."""
+    """Great-circle surface distance between two points, in metres."""
     R = 6_371_000.0
     phi1, phi2 = math.radians(lat1), math.radians(lat2)
     d_phi = math.radians(lat2 - lat1)
@@ -63,14 +64,14 @@ def _haversine_m(lat1: float, lon1: float, lat2: float, lon2: float) -> float:
 
 
 def _alt_hold_pitch(own) -> tuple[float, float]:
-    """Kendi irtifamızı TARGET_ALT_M'de tutacak pitch set-point'i üretir.
+    """Pitch set-point that holds our own altitude at TARGET_ALT_M.
 
-    NOT: own.altitude_m alan adı senin Telemetry sınıfına göre farklı
-    olabilir (örn. relative_altitude_m, alt_m vb.) — kendi sınıfına göre
-    düzelt.
+    NOTE: the field name `own.rel_alt_m` depends on the Telemetry class in
+    use (it might be relative_altitude_m, alt_m and so on) — adjust it if
+    that class changes.
     """
     current_alt = own.rel_alt_m
-    alt_error = TARGET_ALT_M - current_alt  # pozitif: aşağıdayız, tırmanmalıyız
+    alt_error = TARGET_ALT_M - current_alt  # positive: we are low and must climb
 
     pitch_cmd = _clamp(
         config.PURSUIT_BASE_PITCH_DEG + alt_error * config.PURSUIT_PITCH_GAIN,
@@ -82,15 +83,15 @@ def _alt_hold_pitch(own) -> tuple[float, float]:
 
 class PursuitState(BaseState):
     """
-    Sabit kanatlı aracı hedefe yönlendiren offboard attitude state'i.
+    Offboard attitude state that steers a fixed-wing aircraft at a target.
 
-    Kontrol stratejisi:
-      - Yaw: bearing farkı → orantılı roll set-point (bank-to-turn)
-      - İrtifa: TARGET_ALT_M'ye göre orantılı pitch set-point (alt-hold)
-      - Hız: sabit max throttle (config.PURSUIT_THROTTLE) — yakalamayı
-        hızlandırmak istiyorsan bu sabiti config.py'de yükselt.
+    Control strategy:
+      - Yaw: bearing error -> proportional roll set-point (bank-to-turn)
+      - Altitude: proportional pitch set-point holding TARGET_ALT_M
+      - Speed: fixed throttle (config.PURSUIT_THROTTLE) — raise that constant
+        in config.py if the intercept needs to be faster.
 
-    mission.target dict formatı (target_stream.py ile uyumlu):
+    Format of mission.target (matches target_stream.py):
         {"type": "target", "lat": float, "lon": float, "alt": float, ...}
     """
 
@@ -118,59 +119,58 @@ class PursuitState(BaseState):
         logger.info("Exiting PURSUIT after %.1fs", elapsed)
 
     async def update(self, mission: MissionController) -> None:
-        tel = mission.target  # hedef telemetrisi
-        own = mission.telemetry.get()  # kendi telemetrimiz
+        tel = mission.target            # the target's telemetry
+        own = mission.telemetry.get()   # our own telemetry
         elapsed = time.monotonic() - self._entry_time
 
-        # Henüz target gelmediyse irtifayı koru, düz uç, komutu bekle
+        # No target yet: hold altitude, fly straight, wait for one to arrive.
         if tel is None:
-            # await self._send_level(mission, own) # Kendi alt yapınızdaki düz uçuş fonksiyonu
-            self._live.update("[PURSUIT] Hedef bekleniyor, düz uçuşta...")
+            # await self._send_level(mission, own)  # level-flight helper
+            self._live.update("[PURSUIT] Waiting for a target, flying level...")
             return
 
-        # Bearing ve mesafe hesapla
+        # Bearing and distance to the target
         bearing = _bearing_deg(own.latitude_deg, own.longitude_deg, tel["lat"], tel["lon"])
         distance_m = _haversine_m(own.latitude_deg, own.longitude_deg, tel["lat"], tel["lon"])
 
-        # Mevcut yaw'dan bearing farkı -> roll set-point
+        # Bearing error against our current heading -> roll set-point
         yaw_error = _angle_diff(own.heading_deg, bearing)
 
-        # 1. ROLL (YATIŞ) KONTROLÜ - Hedefe yönelmek (Bank-to-turn) için
-        # config.PURSUIT_ROLL_GAIN ile hatayı çarpıyoruz.
+        # 1. ROLL — turn toward the target (bank-to-turn).
+        #    The error is scaled by config.PURSUIT_ROLL_GAIN.
         roll_cmd = _clamp(
             yaw_error * config.PURSUIT_ROLL_GAIN,
             config.PURSUIT_MIN_ROLL_DEG,
             config.PURSUIT_MAX_ROLL_DEG
         )
 
-        # 2. PITCH (YUNUSLAMA) KONTROLÜ - İrtifayı korumak için
+        # 2. PITCH — hold altitude.
         pitch_cmd, alt_error = _alt_hold_pitch(own)
 
-        # UI için durum mesajı oluştur
+        # Status line for the live view
         status_msg = (
-            f"[PURSUIT] Hedef: {distance_m:.1f}m | "
+            f"[PURSUIT] target: {distance_m:.1f}m | "
             f"AltErr: {alt_error:.1f}m -> Pitch: {pitch_cmd:.1f}° | "
             f"YawErr: {yaw_error:.1f}° -> Roll: {roll_cmd:.1f}°"
         )
         self._live.update(status_msg)
 
-        # 3. OFFBOARD KOMUTUNUN GÖNDERİLMESİ
+        # 3. Send the offboard command.
         try:
-            # MAVSDK offboard.set_attitude komutu (Kullandığınız kütüphanenin API'sine göre uyarlayınız)
-            
-            # Sabit kanatta dönüş roll ile sağlanır, yaw genelde mevcut heading veya 0 bırakılır.
+            # On a fixed wing the turn comes from roll, so the yaw rate is
+            # left at zero.
             await mission.vehicle.set_attitude(
                 roll_deg=roll_cmd,
                 pitch_deg=pitch_cmd,
-                yaw_rate_deg_s=0.0,  # Bank-to-turn yaptığımız için yaw rate sıfır
+                yaw_rate_deg_s=0.0,  # bank-to-turn, so no yaw rate
                 thrust=config.PURSUIT_THROTTLE
             )
-                        
+
         except VehicleCommandError as e:
-            logger.error("Offboard komutu gönderilemedi: %s", e)
+            logger.error("Offboard command failed: %s", e)
         except Exception as e:
-            logger.error("Beklenmeyen bir hata oluştu: %s", e)
+            logger.error("Unexpected error in PURSUIT: %s", e)
 
 def _clamp(val: float, min_val: float, max_val: float) -> float:
-    """Verilen değeri min ve max sınırları arasında tutar."""
+    """Clamp a value between min and max."""
     return max(min_val, min(val, max_val))

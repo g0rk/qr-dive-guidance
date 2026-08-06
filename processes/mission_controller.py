@@ -45,23 +45,25 @@ class MissionController(mp.Process):
 
         self.target: dict | None = None  # for simulation video
 
-        # --- Algı sonuçları (perception_result_queue'dan doldurulur) ---
-        # ⚠️ P1: Bu kuyruk daha önce HİÇ OKUNMUYORDU. Constructor'da saklanıp
-        #    orada bitiyordu. İki sonucu vardı:
-        #      1. QR verisi göreve hiç ulaşmıyordu -> dalış kamerayı göremiyor,
-        #         "QR'a dal" diye bir şey mümkün değil.
-        #      2. mp.Queue SINIRSIZ BÜYÜYOR. Algı ~30 FPS üretiyor, kimse
-        #         tüketmiyor; 15 dakikalık bir koşuda RAM'de birikir.
-        #    Artık her tick'te _drain_perception() ile tamamen boşaltılıyor.
-        self.qr_result: dict | None = None    # son QR: data/box/in_av/t
-        self.detections: dict | None = None   # son YOLO tespit paketi
-        # AV icinde QR okundugu an DiveState tarafindan doldurulur.
-        # Sartname s.18: kamikaze vurus tespitinin DORT sartindan biri
-        # "Kamikaze paketinin sunucuya gonderilmesi". Sunucu istemcisi
-        # henuz yok; burada uretilip saklaniyor ki kopru gelince hazir olsun.
+        # --- Perception results (filled from perception_result_queue) ---
+        # ⚠️ This queue was NEVER READ. It was stored in the constructor and
+        #    that was the end of it. Two consequences:
+        #      1. QR data never reached the mission -> the dive could not see
+        #         the camera, so "dive at the QR" was simply not possible.
+        #      2. mp.Queue GROWS WITHOUT BOUND. Perception produces ~30 FPS
+        #         and nobody consumed it; over a 15-minute run it piles up in
+        #         RAM.
+        #    It is now drained completely every tick by _drain_perception().
+        self.qr_result: dict | None = None    # last QR: data/box/in_av/t
+        self.detections: dict | None = None   # last YOLO detection packet
+        # Filled by DiveState the moment a QR is read inside the target area.
+        # The rulebook (p.18) lists "sending the kamikaze packet to the
+        # server" as one of the four conditions for a confirmed hit. There is
+        # no server client yet; the packet is built and held here so it is
+        # ready the day that bridge exists.
         self.kamikaze_hit: dict | None = None
 
-        self._qr_seen: set = set()            # yalnızca "yeni QR" logu için
+        self._qr_seen: set = set()            # only used to log a new QR once
 
     # Process entry point
     def run(self) -> None:
@@ -145,10 +147,11 @@ class MissionController(mp.Process):
         dt = 1.0 / config.LOOP_HZ
 
         while self._running:
-            await self._drain_commands() # Yeri değişebilir
-            
-            # P1: Algi kuyrugunu her tick'te TAMAMEN bosalt. Bu satir olmadan
-            # kuyruk sinirsiz buyur ve algi sonuclari goreve hic ulasmaz.
+            await self._drain_commands()
+
+            # Drain the perception queue COMPLETELY every tick. Without this
+            # line the queue grows without bound and perception results never
+            # reach the mission at all.
             self._drain_perception()
 
             tel = self.telemetry.get()
@@ -171,14 +174,14 @@ class MissionController(mp.Process):
 
     async def _drain_commands(self) -> None:
         """
-        Comm kuyruğundaki tüm bekleyen JSON komutlarını tek tick'te işle.
- 
-        Kuyruğu bloklamadan okur (non-blocking); boş olduğunda durur.
-        Kabul edilen komutlar _change_state() üzerinden FSM geçişini tetikler.
-        Reddedilen komutlar loglanır, durumu etkilemez.
- 
-        Safety abort'a izin vermek için AbortState komutları her zaman işlenir,
-        başka bir state'e geçiş yapılmış olsa bile kuyruk tamamen boşaltılır.
+        Process every pending JSON command from the comm queue in one tick.
+
+        Reads without blocking; stops when the queue is empty. Accepted
+        commands trigger an FSM transition through _change_state(). Rejected
+        commands are logged and leave the state untouched.
+
+        The queue is always drained completely, even after a transition, so
+        that a safety abort queued behind another command still gets through.
         """
         while True:
             try:
@@ -186,7 +189,7 @@ class MissionController(mp.Process):
             except Exception:
                 # Queue is empty - multiprocessing.Queue.Empty
                 break
- 
+
             try:
                 parsed = json.loads(raw)
                 msg_type = parsed.get("type")
@@ -200,7 +203,7 @@ class MissionController(mp.Process):
                 continue
 
             result = self._router.resolve(raw, self._state.name)
-            
+
             if result.ok:
                 await self._change_state(result.new_state)
             else:
@@ -208,48 +211,51 @@ class MissionController(mp.Process):
 
     def _drain_perception(self) -> None:
         """
-        perception_result_queue'yu tek tick'te tamamen bosalt.  [P1]
+        Empty perception_result_queue completely in one tick.
 
-        Bu kuyruk PerceptionProcess'ten gelir ve IKI isi vardir:
-          1. Algi sonuclarini goreve ulastirmak (QR konumu, YOLO tespitleri)
-          2. Bosaltilmadigi surece SINIRSIZ BUYUMEK
+        The queue comes from PerceptionProcess and does two jobs:
+          1. Deliver perception results to the mission (QR position, YOLO
+             detections)
+          2. GROW WITHOUT BOUND for as long as nobody drains it
 
-        (2) gercek bir risk: perception ~30 FPS uretiyor, kimse okumuyordu.
+        (2) was a real problem: perception produces ~30 FPS and nothing was
+        reading it.
 
-        Yalnizca SON deger saklanir - eski algi verisi kontrol icin degersiz,
-        ustelik bayat veriyle komut uretmek tehlikeli (bkz. dive_state._fresh_qr).
+        Only the LATEST value is kept - old perception data is worthless for
+        control, and producing commands from stale data is dangerous
+        (see dive_state._fresh_qr).
         """
         while True:
             try:
                 msg = self.perception_result_queue.get_nowait()
             except Exception:
-                break  # queue.Empty - kuyruk bosaldi
+                break  # queue.Empty - nothing left
 
             if not isinstance(msg, dict):
                 continue
 
             msg_type = msg.get("type")
             if msg_type == "qr":
-                # Tuketen taraf bayatliga kendisi karar verebilsin diye
-                # varis anini damgaliyoruz (perception 't' gondermiyor).
+                # Stamp the arrival time so the consumer can judge staleness
+                # for itself (perception does not send a 't').
                 msg = dict(msg)
                 msg.setdefault("t", time.monotonic())
                 self.qr_result = msg
                 data = msg.get("data")
                 if data and data not in self._qr_seen:
                     self._qr_seen.add(data)
-                    logger.info("QR okundu: %s (AV icinde: %s)",
+                    logger.info("QR read: %s (inside target area: %s)",
                                 data, msg.get("in_av"))
             elif msg_type == "yolo":
                 self.detections = msg
 
     # TODO
     def _push_status(self, payload: dict) -> None:
-        """comm_status_queue'ya non-blocking olarak durum mesajı gönder."""
+        """Send a status message to comm_status_queue without blocking."""
         try:
             self.comm_status_queue.put_nowait(payload)
         except Exception:
-            pass  # Kuyruk doluysa sessizce geç
+            pass  # Queue full - drop it silently
 
     async def _change_state(self, new_state: BaseState) -> None:
         """

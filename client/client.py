@@ -37,7 +37,7 @@ async def websocket_handler(command_queue):
             await asyncio.gather(
                 receive_loop(),
                 send_loop(),
-                target_stream(target_queue, hz=10.0),   # ← hedef araç
+                target_stream(target_queue, hz=10.0),   # <- the target aircraft
                 target_forward_loop(),
             )
 

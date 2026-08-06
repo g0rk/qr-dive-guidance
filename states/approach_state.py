@@ -65,12 +65,13 @@ class ApproachState(BaseState):
         )
 
         try:
-            # P2: GORELI irtifa ile komut ediyoruz. `goto_location()` MAVSDK'de
-            #     MUTLAK (AMSL) bekler; buraya dogrudan APPROACH_SAFE_ALTITUDE_M
-            #     verilirse deniz seviyesinde OLMAYAN her sahada yanlis irtifaya
-            #     ucariz ve asagidaki rel_alt kontrolu her seferinde ABORT uretir.
-            #     PX4 SITL varsayilani Zurih (488 m) -> yerin 388 m alti.
-            #     Ayrinti: vehicle.goto_location_rel
+            # We command a RELATIVE altitude here. MAVSDK's `goto_location()`
+            # expects an ABSOLUTE (AMSL) altitude; handing it
+            # APPROACH_SAFE_ALTITUDE_M directly means flying to the wrong
+            # altitude at any site that is not at sea level, and the rel_alt
+            # check below then produces an ABORT every single time. The PX4
+            # SITL default is Zurich at 488 m -> that would be 388 m below
+            # ground. See vehicle.goto_location_rel for the conversion.
             await mission.vehicle.goto_location_rel(
                 ghost_lat, ghost_lon, config.APPROACH_SAFE_ALTITUDE_M,
             )

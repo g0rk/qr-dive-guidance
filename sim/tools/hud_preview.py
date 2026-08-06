@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""HUD cizimini gozle dogrulamak icin: egik bir QR sahnesi uretip render eder."""
+"""Render a tilted QR scene so the HUD overlay can be checked by eye."""
 import os, sys, math
 SIM = os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 sys.path.insert(0, SIM)
@@ -44,8 +44,8 @@ def qr_tile(px=420):
     return cv2.resize(a, (px, px), interpolation=cv2.INTER_AREA)
 
 
-def sahne(donme_deg, perspektif=0.22):
-    """Cimen zemin + egik/perspektifli QR."""
+def scene(rotation_deg, perspective=0.22):
+    """A grass background with a rotated, perspective-warped QR on it."""
     f = np.full((H, W, 3), (60, 105, 70), np.uint8)
     f += np.random.randint(-8, 8, f.shape, dtype=np.int16).astype(np.uint8)
     tile = qr_tile()
@@ -54,10 +54,10 @@ def sahne(donme_deg, perspektif=0.22):
     cx, cy, r = W * 0.5, H * 0.52, s * 0.62
     pts = []
     for i, (dx, dy) in enumerate([(-1, -1), (1, -1), (1, 1), (-1, 1)]):
-        a = math.radians(donme_deg)
+        a = math.radians(rotation_deg)
         rx = dx * math.cos(a) - dy * math.sin(a)
         ry = dx * math.sin(a) + dy * math.cos(a)
-        k = 1.0 - perspektif * (ry + 1) / 2.0     # ust kenar daha uzak
+        k = 1.0 - perspective * (ry + 1) / 2.0    # the far edge is smaller
         pts.append([cx + rx * r * k, cy + ry * r * k])
     Mx = cv2.getPerspectiveTransform(src, np.float32(pts))
     warp = cv2.warpPerspective(tile, Mx, (W, H), borderMode=cv2.BORDER_TRANSPARENT,
@@ -67,50 +67,52 @@ def sahne(donme_deg, perspektif=0.22):
     return f
 
 
-class Sahte(PerceptionProcess):
+class _Shim(PerceptionProcess):
     def __init__(self):
         pass
 
 
 def main():
-    p = Sahte()
+    p = _Shim()
     out = "/tmp/hud"
     os.makedirs(out, exist_ok=True)
     av_x1, av_y1 = int(W * config.AV_MARGIN_X), int(H * config.AV_MARGIN_Y)
     av_x2, av_y2 = W - av_x1, H - av_y1
 
-    for ad, donme in (("duz", 0.0), ("egik30", 30.0), ("egik45", 45.0)):
-        f = sahne(donme)
-        bulunan = decode(f)
-        if not bulunan:
-            print("  %s: decode YOK" % ad); continue
-        b = bulunan[0]
+    # Output names match docs/ so the mapping is obvious.
+    for name, rotation in (("hud_head_on", 0.0), ("hud_rotated_30deg", 30.0),
+                           ("hud_rotated_45deg", 45.0)):
+        f = scene(rotation)
+        found = decode(f)
+        if not found:
+            print("  %s: NO decode" % name); continue
+        b = found[0]
         corners = polygon_to_corners(getattr(b, "polygon", None), 0, 0, 1)
         x, y, bw, bh = b.rect
         qc = quad_center(corners)
         if corners and qc:
             in_av = quad_in_av(corners, av_x1, av_y1, av_x2, av_y2)
-            cx, cy = qc; kaynak = "quad"
+            cx, cy = qc; source = "quad"
         else:
-            in_av = True; cx, cy = x + bw / 2, y + bh / 2; kaynak = "box"
+            in_av = True; cx, cy = x + bw / 2, y + bh / 2; source = "box"
 
         cv2.rectangle(f, (av_x1, av_y1), (av_x2, av_y2), (255, 255, 0), 2)
-        renk = (0, 255, 0) if in_av else (0, 165, 255)
-        p._draw_qr_overlay(f, corners, (x, y, bw, bh), (cx, cy), renk,
-                           b.data.decode(), in_av, kaynak)
+        color = (0, 255, 0) if in_av else (0, 165, 255)
+        p._draw_qr_overlay(f, corners, (x, y, bw, bh), (cx, cy), color,
+                           b.data.decode(), in_av, source)
 
-        # kutu ile dortgeni karsilastir: kutuyu ince gri ciz
+        # Compare the box against the quadrilateral: draw the box thin and grey.
         cv2.rectangle(f, (x, y), (x + bw, y + bh), (150, 150, 150), 1)
-        kutu_alan = bw * bh
-        dort_alan = cv2.contourArea(np.array(corners, np.int32)) if corners else kutu_alan
+        box_area = bw * bh
+        quad_area = cv2.contourArea(np.array(corners, np.int32)) if corners else box_area
         cv2.putText(f, "rotation %.0f deg   box/quad area = %.2fx"
-                    % (donme, kutu_alan / max(dort_alan, 1)),
+                    % (rotation, box_area / max(quad_area, 1)),
                     (30, H - 40), cv2.FONT_HERSHEY_SIMPLEX, 0.9, (255, 255, 255), 2)
 
-        kirp = f[max(0, int(cy) - 380):int(cy) + 380, max(0, int(cx) - 640):int(cx) + 640]
-        cv2.imwrite("%s/%s.png" % (out, ad), kirp)
-        print("  %s -> box/quad=%.2fx  merkez=(%d,%d)  kaynak=%s"
-              % (ad, kutu_alan / max(dort_alan, 1), cx, cy, kaynak))
+        crop = f[max(0, int(cy) - 380):int(cy) + 380, max(0, int(cx) - 640):int(cx) + 640]
+        cv2.imwrite("%s/%s.png" % (out, name), crop)
+        print("  %s -> box/quad=%.2fx  centre=(%d,%d)  source=%s"
+              % (name, box_area / max(quad_area, 1), cx, cy, source))
 
 
 if __name__ == "__main__":

@@ -1,112 +1,145 @@
-# Simülasyon varlıkları
+# Simulation assets
 
-`fly-onboard-sim` için PX4 gz (Garden) simülasyon ortamı.
+The PX4 gz (Garden) simulation environment for this repository.
 
-## Kurulum
+## Install
 
 ```bash
 ./install.sh ~/PX4-Autopilot
 cd ~/PX4-Autopilot && make px4_sitl gz_rc_cessna_cam
 ```
 
-## İçerik
+## Contents
 
-| | Ne |
+| | What it is |
 |---|---|
-| `models/qr_pad` | **Taban model.** 2×2 m QR + dört tarafta 45°, 3 m plakalar (şartname s.17) |
-| `models/nose_cam` | Burun kamerası. PX4 `mono_cam`'den türetildi, **parametreler gerçek donanıma göre** |
-| `models/rc_cessna_cam` | `rc_cessna` + `nose_cam`. Kalıp: PX4'ün `x500_mono_cam`'i |
-| `worlds/qr_target.sdf` | `default.sdf` + `qr_pad` @ (500 m doğu, 0) |
-| `airframes/4009_gz_rc_cessna_cam` | Dünya ve model seçimi |
+| `models/qr_pad` | **Base model.** 2×2 m QR with 45°, 3 m plates on all four sides (rulebook p.17). Kept for reference — the world does *not* use it |
+| `models/qr_pad_v1` | **The model the world uses.** Same geometry, corrected texture |
+| `models/nose_cam` | Nose camera. Derived from PX4's `mono_cam`, **with real hardware parameters** |
+| `models/rc_cessna_cam` | `rc_cessna` + `nose_cam`, patterned on PX4's `x500_mono_cam` |
+| `models/grass_field` | Textured grass around the pad, so detection is tested against a realistic background |
+| `worlds/qr_target.sdf` | `default.sdf` + `qr_pad` @ (500 m east, 0) |
+| `airframes/4009_gz_rc_cessna_cam` | Selects the world and the model |
 
-## Kamera parametreleri — ✅ artık varsayım değil
+## Camera parameters — no longer an assumption
 
-**Gerçek donanım doğrulandı (2026-08-05):**
+**The real hardware was confirmed on 2026-08-05:**
 
-| | Değer |
+| | Value |
 |---|---|
 | Model | **DFM 37UR0234-ML** (The Imaging Source) |
-| Sensör | onsemi **AR0234CS** CMOS |
+| Sensor | onsemi **AR0234CS** CMOS |
 | Format | **1/2.6"** |
-| Çözünürlük | 1920 × 1200 |
-| Piksel boyutu | 3.0 µm |
-| Efektif alan (üretici) | 5.62 mm × 3.20 mm |
+| Resolution | 1920 × 1200 |
+| Pixel size | 3.0 µm |
+| Effective area (vendor) | 5.62 mm × 3.20 mm |
 | Lens | 6 mm |
 
-Önceki oturum *"6mm + 2MP → 1/2.6" (AR0234)"* diye **varsaymıştı — varsayım doğru
-çıktı.** Dolayısıyla eski menzil/geometri ölçümlerinin hiçbiri geçersiz olmadı.
+An earlier session had *assumed* "6 mm + 2 MP → 1/2.6" (AR0234)". **The
+assumption turned out to be right**, so none of the earlier range or geometry
+measurements were invalidated.
 
-`nose_cam` PX4'ün `mono_cam`'inden **bilerek farklı**:
+`nose_cam` is **deliberately different** from PX4's `mono_cam`:
 
 | | PX4 mono_cam | nose_cam |
 |---|---|---|
 | HFOV | 1.74 rad = 99.7° | **0.8950 rad = 51.28°** |
-| Çözünürlük | 640×480 | **1920×1080** |
+| Resolution | 640×480 | **1920×1080** |
 
-### HFOV nereden geliyor
+### Where the HFOV comes from
 
 ```
-HFOV = 2 · arctan( sensör_genişliği / (2 · odak_uzaklığı) )
+HFOV = 2 · arctan( sensor_width / (2 · focal_length) )
      = 2 · arctan( 5.76 / (2 · 6) ) = 51.28° = 0.8950 rad
 ```
 
-### ⚠️ Üreticinin sayfası kendi içinde çelişkili
+### ⚠️ The vendor's page contradicts itself
 
-| | Piksel sayısı × 3.0 µm | Üreticinin dediği |
+| | Pixel count × 3.0 µm | Vendor says |
 |---|---|---|
-| Yatay | 1920 × 3.0 µm = **5.76 mm** | 5.62 mm |
-| Dikey | 1200 × 3.0 µm = **3.60 mm** | 3.20 mm |
-| Dikey (1080 satır) | 1080 × 3.0 µm = **3.24 mm** | ← "3.20" buna çok daha yakın |
+| Horizontal | 1920 × 3.0 µm = **5.76 mm** | 5.62 mm |
+| Vertical | 1200 × 3.0 µm = **3.60 mm** | 3.20 mm |
+| Vertical (1080 rows) | 1080 × 3.0 µm = **3.24 mm** | ← "3.20" is far closer to this |
 
-Yani "efektif alan" muhtemelen tam 1920×1200 dizisini tarif etmiyor. Renderer
-iğne deliği (pinhole) modeli piksel geometrisiyle tutarlı olmalı: gz 1920 sütun
-örnekliyor, her sütun 3.0 µm → **5.76 mm** kullanıldı.
+So the "effective area" probably does not describe the full 1920×1200 array.
+The renderer's pinhole model has to be consistent with the pixel geometry: gz
+samples 1920 columns, each 3.0 µm, so **5.76 mm** is what is used.
 
-**Belirsizliğin büyüklüğü ve yönü:**
+**The size and direction of the uncertainty:**
 
-| Sensör genişliği | HFOV |
+| Sensor width | HFOV |
 |---|---|
 | 5.76 mm | 51.28° |
 | 5.62 mm | 50.19° |
 
-Fark yalnızca **1.09° (%2.1)**. Geniş HFOV = aynı 1920 piksele daha çok dünya
-sığar = hedef daha **küçük** görünür. Yani 51.28° kullanmak, gerçek 50.19° ise,
-QR'ı %2.1 küçük gösterir → decode menzilini **olduğundan kötü** tahmin ederiz.
-**Hata güvenli yönde.** Ölçülen 40 m decode eşiği 10 m'lik basamaklarla bulunduğu
-için bundan etkilenmiyor.
+The difference is only **1.09° (2.1 %)**. A wider HFOV means more world fits
+into the same 1920 pixels, so the target looks **smaller**. Using 51.28° when
+the truth is 50.19° therefore makes the QR appear 2.1 % smaller and
+**underestimates** the decode range. The error is on the safe side, and the
+measured 40 m decode threshold is unaffected because it was found in 10 m
+steps.
 
-> **Kesin cevap ölçümle gelir:** kamera elde olunca satranç tahtası +
-> OpenCV `calibrateCamera`. Datasheet tartışması değil, kalibrasyon.
+> **The definitive answer comes from measurement:** once the camera is in
+> hand, a chessboard and OpenCV `calibrateCamera`. This is not a datasheet
+> argument to be won.
 
-### Neden 1200 değil 1080 satır
+### Why 1080 rows and not 1200
 
-Sensör 1920×1200 = **16:10**. Şartname s.12 yalnızca **4:3, 5:4, 16:9**
-oranlarına izin veriyor — **16:10 listede yok.** Hakem videosu 16:9 olmak
-zorunda, o yüzden 1080 satıra kırpılıyor (üstten ve alttan 60'şar satır).
+The sensor is 1920×1200 = **16:10**. The rulebook (p.12) allows only **4:3,
+5:4 and 16:9** — **16:10 is not on the list.** The judge video has to be 16:9,
+so the readout is cropped to 1080 rows (60 dropped from the top and 60 from
+the bottom).
 
-Sonucu dikey görüş alanı:
+The vertical field of view that results:
 ```
 VFOV = 2 · arctan( tan(HFOV/2) · 1080/1920 ) = 30.22°
 ```
-Tam sensör kullanılabilseydi 33.40° olurdu — **kullanamıyoruz.**
+The full sensor would give 33.40° — which cannot be used.
 
-## Hedef koordinatı
+## Target coordinate
 
-`qr_pad` dünyada (X=500 m doğu, Y=0). PX4 gz SITL home'u Zürih
-(47.397742, 8.545594) olduğu için karşılığı:
+`qr_pad` sits at (X = 500 m east, Y = 0) in the world.
+
+⚠️ **There are two different "home" origins, and confusing them costs 50 m.**
+This section previously documented the wrong one, which is exactly the bug it
+should have prevented:
+
+| | Latitude / Longitude | When it applies |
+|---|---|---|
+| PX4's documented default | 47.397742 / 8.545594 | simulators **other than** gz |
+| The gz world's own `<spherical_coordinates>` | **47.397971 / 8.546164** | **under gz — this is the one** |
+
+They are 49.9 m apart. Deriving the target from the first one put it 49.9 m
+southwest of the pad; since the pad is 2 m × 2 m, that is 25 times its edge
+length, and the aircraft dived at empty grass.
+
+The correct values, which are what `config.py` holds:
 
 ```python
-TARGET_LATITUDE_DEG  = 47.3977420
-TARGET_LONGITUDE_DEG = 8.5522294
+TARGET_LATITUDE_DEG  = 47.3979711
+TARGET_LONGITUDE_DEG = 8.5527992
 ```
 
-`config.py` bu değerlerle güncellendi. Doğrulandı: mesafe 500.0 m, kerteriz 90.0°.
+Verified: 500.0 m at a bearing of 90.0° from the world origin. This is not
+left to trust — `tests/test_hedef_koordinati.py` reads the world SDF and
+re-derives both numbers, so the world and the config cannot drift apart in
+silence.
 
-## Bilinen eksikler
+## Known gaps
 
-- **QR Versiyon 2**, şartname (Haberleşme Dokümanı §9) **Versiyon 1** istiyor.
-  V2 = 25 modül vs V1 = 21 → aynı 2 m'de modül %16 küçük → decode menzili kısa.
-- **Sessiz bölge ~0.2 modül**, standart **4 modül** ister. Sahnede QR doğrudan
-  çime dayanıyor; açıyla/uzaktan decode'u bozabilir.
-- Modelde `<collision>` yok, hepsi `<visual>` — uçak içinden geçer.
-  Bizim amacımız için sorun değil.
+- The models have no `<collision>`, only `<visual>` — the aircraft flies
+  straight through them. That is fine for this purpose, but it does mean the
+  simulation cannot tell you anything about an impact.
+- The camera intrinsics come from a datasheet, not a calibration (see above).
+- `sim/tools/measure_alt.py` subscribes to `/cam60` … `/cam20`, but nothing in
+  this repository generates a world with those cameras. The decode-threshold
+  measurement it reports was taken with a multi-camera world that was never
+  committed. Reproducing it currently means building that world by hand.
+
+### Gaps that used to be listed here and are now fixed
+
+- ~~QR Version 2 while the rulebook asks for Version 1~~ — fixed by
+  `qr_pad_v1` (21×21 modules), which is what the world loads.
+- ~~Quiet zone of about 0.2 modules~~ — `qr_pad_v1` uses 2 modules
+  (80 px / 840 px). The base `qr_pad` still has the small quiet zone on
+  purpose, as a record of what the problem looked like.

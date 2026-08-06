@@ -8,14 +8,17 @@ import time
 
 from states.base_state import BaseState
 
-# ⚠️ BU IMPORT EKSIKTI ve UCAGIN KALKMASINI TAMAMEN ENGELLIYORDU.
-#    __init__ icinde config.TAKEOFF_ALTITUDE_M kullaniliyor (asagida);
-#    import olmayinca TakeoffState() kurulurken NameError atiyordu.
-#    CommandRouter kurulumu try/except ile sardigi icin cokme, sadece
-#    "Command rejected: Failed to instantiate TakeoffState: name 'config'
-#    is not defined" seklinde bir UYARIYA donusuyordu -> sessiz kaliyordu.
-#    Gerileme kaynagi: 4ec2179'da _target_alt_m koddan config'e tasindi,
-#    import eklenmedi. tests/test_durum_kurulumu.py bunu kilitliyor.
+# ⚠️ THIS IMPORT WAS MISSING, AND IT MADE TAKE-OFF IMPOSSIBLE.
+#    __init__ uses config.TAKEOFF_ALTITUDE_M (below); without the import,
+#    constructing TakeoffState() raised NameError. Because CommandRouter
+#    wraps construction in try/except, that never crashed - it degraded into
+#    a single warning line:
+#        "Command rejected: Failed to instantiate TakeoffState:
+#         name 'config' is not defined"
+#    so the aircraft simply never took off, silently. The regression came in
+#    when _target_alt_m moved from a literal into config and the import was
+#    not added with it. tests/test_durum_kurulumu.py now locks this down by
+#    instantiating every state.
 import config
 
 if TYPE_CHECKING:
@@ -37,10 +40,12 @@ class TakeoffState(BaseState):
 
     def __init__(self) -> None:
         super().__init__()
-        # ⚠️ Eskiden koda gomuluydu (100). Dalis zinciriyle BAGLI oldugu icin
-        #    config'e tasindi: sartname s.18 dalisa >=100 m'den baslamayi sart
-        #    kosuyor (DIVE_MIN_ENTRY_ALTITUDE_M) ve yaklasma da bu irtifada
-        #    yapiliyor (APPROACH_SAFE_ALTITUDE_M). Ucu birlikte degismeli.
+        # ⚠️ This used to be a literal (100) in the code. It moved into config
+        #    because it is TIED to the dive chain: the rulebook (p.18)
+        #    requires the dive to start at or above 100 m
+        #    (DIVE_MIN_ENTRY_ALTITUDE_M) and the approach is flown at that
+        #    altitude too (APPROACH_SAFE_ALTITUDE_M). All three have to move
+        #    together.
         self._target_alt_m = config.TAKEOFF_ALTITUDE_M
         self._arm_requested: bool = False
         self._takeoff_requested: bool = False

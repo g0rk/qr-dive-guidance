@@ -125,11 +125,13 @@ class ServerClock:
         using "now" for a reading that is already 200 ms old bakes that
         200 ms into every timestamp afterwards.
         """
-        for ad, deger, ust in (("saat", saat, 23), ("dakika", dakika, 59),
-                               ("saniye", saniye, 59),
-                               ("milisaniye", milisaniye, 999)):
-            if not 0 <= deger <= ust:
-                raise ValueError("%s out of range: %r" % (ad, deger))
+        # The field names below are the server's, so they stay in Turkish;
+        # the loop variables are ours.
+        for name, value, upper in (("saat", saat, 23), ("dakika", dakika, 59),
+                                   ("saniye", saniye, 59),
+                                   ("milisaniye", milisaniye, 999)):
+            if not 0 <= value <= upper:
+                raise ValueError("%s out of range: %r" % (name, value))
         if not 1 <= gun <= 31:
             raise ValueError("gun out of range: %r" % gun)
 

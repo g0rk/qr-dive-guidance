@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
 """Cut the dive moment out of a flight recording as an animated GIF.
 
-    python3 sim/tools/make_gif.py [ucus.mp4] [kare_raporu.txt] [cikis.gif]
+    python3 sim/tools/make_gif.py [flight.mp4] [frame_report.txt] [out.gif]
 
 Finds the frames where the QR actually decoded, takes a window around them,
 and writes a small looping GIF -- the one artifact that shows the whole
@@ -16,15 +16,15 @@ import sys
 
 import cv2
 
-VIDEO = sys.argv[1] if len(sys.argv) > 1 else "/tmp/ucus.mp4"
-RAPOR = sys.argv[2] if len(sys.argv) > 2 else "/tmp/kare_raporu.txt"
-CIKIS = sys.argv[3] if len(sys.argv) > 3 else "/tmp/dive.gif"
+VIDEO = sys.argv[1] if len(sys.argv) > 1 else "/tmp/flight.mp4"
+REPORT = sys.argv[2] if len(sys.argv) > 2 else "/tmp/frame_report.txt"
+OUTPUT = sys.argv[3] if len(sys.argv) > 3 else "/tmp/dive.gif"
 
-ONCE_S = 2.4          # seconds of approach to keep before the first decode
-SONRA_S = 1.2         # seconds to keep after the last decode
-GENISLIK = 500        # output width; height follows the aspect ratio
-HEDEF_FPS = 10        # GIF frame rate -- low enough to keep the file small
-RENK = 64             # palette size; the overlay is flat colour so this is
+LEAD_S = 2.4          # seconds of approach to keep before the first decode
+TRAIL_S = 1.2         # seconds to keep after the last decode
+WIDTH = 500           # output width; height follows the aspect ratio
+TARGET_FPS = 10       # GIF frame rate -- low enough to keep the file small
+COLORS = 64           # palette size; the overlay is flat colour so this is
                       # plenty, and it roughly halves the file
 
 
@@ -32,56 +32,56 @@ def main():
     try:
         from PIL import Image
     except ImportError:
-        print("Pillow gerekli:  pip3 install pillow")
+        print("Pillow is required:  pip3 install pillow")
         return 1
 
-    satirlar = list(csv.DictReader(open(RAPOR)))
-    decode = [r for r in satirlar if r["decode"] == "1"]
-    if not decode:
-        print("kare raporunda hic decode yok: %s" % RAPOR)
+    rows = list(csv.DictReader(open(REPORT)))
+    decoded = [r for r in rows if r["decode"] == "1"]
+    if not decoded:
+        print("no decodes in the frame report: %s" % REPORT)
         return 1
 
-    ilk_kare = int(decode[0]["kare"])
-    son_kare = int(decode[-1]["kare"])
-    print("decode kareleri: %d - %d  (%d kare)"
-          % (ilk_kare, son_kare, len(decode)))
+    first_frame = int(decoded[0]["frame"])
+    last_frame = int(decoded[-1]["frame"])
+    print("decoded frames: %d - %d  (%d frames)"
+          % (first_frame, last_frame, len(decoded)))
 
     cap = cv2.VideoCapture(VIDEO)
     if not cap.isOpened():
-        print("video acilamadi: %s" % VIDEO)
+        print("could not open the video: %s" % VIDEO)
         return 1
     fps = cap.get(cv2.CAP_PROP_FPS) or 20.0
 
-    bas = max(0, ilk_kare - int(ONCE_S * fps))
-    son = son_kare + int(SONRA_S * fps)
-    adim = max(1, int(round(fps / HEDEF_FPS)))
+    start = max(0, first_frame - int(LEAD_S * fps))
+    end = last_frame + int(TRAIL_S * fps)
+    step = max(1, int(round(fps / TARGET_FPS)))
 
-    kareler = []
-    cap.set(cv2.CAP_PROP_POS_FRAMES, bas)
-    idx = bas
-    while idx <= son:
+    frames = []
+    cap.set(cv2.CAP_PROP_POS_FRAMES, start)
+    idx = start
+    while idx <= end:
         ok, f = cap.read()
         if not ok:
             break
-        if (idx - bas) % adim == 0:
+        if (idx - start) % step == 0:
             h, w = f.shape[:2]
-            yeni = (GENISLIK, int(h * GENISLIK / w))
-            f = cv2.resize(f, yeni, interpolation=cv2.INTER_AREA)
-            kareler.append(Image.fromarray(cv2.cvtColor(f, cv2.COLOR_BGR2RGB)))
+            size = (WIDTH, int(h * WIDTH / w))
+            f = cv2.resize(f, size, interpolation=cv2.INTER_AREA)
+            frames.append(Image.fromarray(cv2.cvtColor(f, cv2.COLOR_BGR2RGB)))
         idx += 1
     cap.release()
 
-    if not kareler:
-        print("kare cikarilamadi")
+    if not frames:
+        print("no frames could be extracted")
         return 1
 
     # Palette quantisation keeps the file small; the overlay is flat colour
-    # so 128 colours is plenty and the QR modules stay crisp.
-    kucuk = [k.quantize(colors=RENK, method=Image.MEDIANCUT) for k in kareler]
-    kucuk[0].save(CIKIS, save_all=True, append_images=kucuk[1:],
-                  duration=int(1000 / HEDEF_FPS), loop=0, optimize=True)
-    print("%d kare -> %s  (%.1f MB)"
-          % (len(kucuk), CIKIS, os.path.getsize(CIKIS) / 1e6))
+    # so this palette is plenty and the QR modules stay crisp.
+    small = [k.quantize(colors=COLORS, method=Image.MEDIANCUT) for k in frames]
+    small[0].save(OUTPUT, save_all=True, append_images=small[1:],
+                  duration=int(1000 / TARGET_FPS), loop=0, optimize=True)
+    print("%d frames -> %s  (%.1f MB)"
+          % (len(small), OUTPUT, os.path.getsize(OUTPUT) / 1e6))
     return 0
 
 

@@ -1,11 +1,13 @@
 #!/usr/bin/env python3
-"""ROS2 koprusunden gelen kareleri PNG olarak kaydet + gercek algi kodunu calistir."""
+"""Save frames arriving over the ROS2 bridge as PNGs, running the real
+perception code on each one."""
 import os
 import sys
 
-# ⚠️ Depo koku, DOSYANIN KENDI KONUMUNDAN turetilir - mutlak yol yazilmaz.
-#    Eskiden "/mnt/c/Users/<kullanici>/..." diye sabitti: hem baskasinin
-#    makinesinde calismazdi hem de public depoda kullanici adini sizdirirdi.
+# ⚠️ The repository root is derived FROM THIS FILE'S OWN LOCATION - never
+#    written as an absolute path. It used to be hard-coded as
+#    "/mnt/c/Users/<name>/...", which both failed on anyone else's machine
+#    and leaked a username into a public repository.
 SIM = os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 sys.path.insert(0, SIM)
 
@@ -46,7 +48,7 @@ class Saver(Node):
         self.p = PerceptionProcess(Q(), Q())
         for t in topics:
             self.create_subscription(Image, t, self._make_cb(t), 1)
-        print("  abone olunan: %s" % ", ".join(topics))
+        print("  subscribed to: %s" % ", ".join(topics))
 
     def _make_cb(self, topic):
         def cb(msg):
@@ -62,7 +64,7 @@ class Saver(Node):
                 std = float(frame.std())
                 print("  %-12s %dx%d  std=%.1f  %s"
                       % (topic, frame.shape[1], frame.shape[0], std,
-                         "DUZ (sahne yok)" if std < 3 else "sahne VAR"))
+                         "FLAT (no scene)" if std < 3 else "scene present"))
 
             vis = frame.copy()
             self.p.result_queue = Q()
@@ -73,7 +75,7 @@ class Saver(Node):
                 self.hit[topic] += 1
                 if self.hit[topic] == 1:
                     r = res[0]
-                    print("  %-12s QR BULUNDU data=%r in_av=%s src=%s"
+                    print("  %-12s QR FOUND data=%r in_av=%s src=%s"
                           % (topic, r.get("data"), r.get("in_av"), r.get("src")))
                     print("  %-12s   box=%s" % ("", r.get("box")))
                     print("  %-12s   corners=%s" % ("", r.get("corners")))
@@ -96,7 +98,7 @@ def main():
         t += 0.2
     print()
     for k in node.n:
-        print("  %-12s kare=%d  QR=%d" % (k, node.n[k], node.hit[k]))
+        print("  %-12s frames=%d  QR=%d" % (k, node.n[k], node.hit[k]))
     node.destroy_node()
     rclpy.shutdown()
     return 0

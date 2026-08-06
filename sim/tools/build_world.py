@@ -1,17 +1,20 @@
 #!/usr/bin/env python3
 """
-qr_target.sdf uretici.
+Generator for qr_target.sdf.
 
-⚠️ REGEX KULLANMIYORUZ. Ilk denemede `<scene>.*?</scene>` deseni dosyadaki
-   ILK eslesmeyi yakaladi - ki o, GUI eklentisi icindeki <scene>scene</scene>
-   dizesiydi. Sonuc: GUI bozuldu, dunyanin gercek <scene>'i hic degismedi,
-   arka plan 0.7 gri kaldi ve kamera duz gri kare uretti.
-   XML agacinda <world>'un DOGRUDAN cocugu olan <scene> hedefleniyor.
+⚠️ NO REGEX HERE. The first attempt used a `<scene>.*?</scene>` pattern,
+   which matched the FIRST occurrence in the file - and that turned out to be
+   the string <scene>scene</scene> inside a GUI plugin. The result: the GUI
+   broke, the world's real <scene> was never touched, the background stayed
+   at 0.7 grey and the camera produced a flat grey frame.
+   This walks the XML tree and targets the <scene> that is a DIRECT child of
+   <world>.
 """
 import sys
 import xml.etree.ElementTree as ET
 
-# ⚠️ HFOV TEK KAYNAKTAN OKUNUR - elle kopyalanmaz. Gerekcesi cam_params.py'de.
+# ⚠️ The HFOV is READ FROM THE SINGLE SOURCE - never copied by hand.
+# The reasoning is in cam_params.py.
 from cam_params import hfov_rad
 
 
@@ -25,12 +28,12 @@ def main(src, dst):
     root = tree.getroot()
     world = root.find("world")
     if world is None:
-        print("HATA: <world> yok"); return 1
+        print("ERROR: no <world>"); return 1
 
     world.set("name", "qr_target")
 
-    # --- 1) DUNYA scene'i (GUI'ninki degil: world'un dogrudan cocugu) ---
-    old = world.find("scene")          # find() yalnizca dogrudan cocuklara bakar
+    # --- 1) The WORLD's scene (not the GUI's: a direct child of <world>) ---
+    old = world.find("scene")          # find() only looks at direct children
     if old is not None:
         world.remove(old)
     world.append(frag("""
@@ -43,9 +46,9 @@ def main(src, dst):
       <background>0.55 0.70 0.90 1</background>
       <shadows>true</shadows>
     </scene>"""))
-    print("  dunya <scene> degistirildi (gokyuzu + golgeler)")
+    print("  world <scene> replaced (sky + shadows)")
 
-    # --- 2) zemin rengi: dogal cim ---
+    # --- 2) ground colour: natural grass ---
     n = 0
     for model in world.findall("model"):
         if model.get("name") != "ground_plane":
@@ -62,9 +65,9 @@ def main(src, dst):
                     e = ET.SubElement(mat, tag)
                 e.text = val
                 n += 1
-    print("  zemin materyali guncellendi (%d alan)" % n)
+    print("  ground material updated (%d fields)" % n)
 
-    # --- 3) dolgu isigi: golgeler tek yonden sertlesmesin ---
+    # --- 3) fill light, so shadows are not harsh from a single direction ---
     world.append(frag("""
     <light type="directional" name="sun_fill">
       <cast_shadows>false</cast_shadows>
@@ -77,39 +80,42 @@ def main(src, dst):
       </attenuation>
       <direction>-0.3 -0.3 -0.9</direction>
     </light>"""))
-    print("  dolgu isigi eklendi")
+    print("  fill light added")
 
-    # --- 4) hedef: dokulu cim yamasi + qr_pad ---
-    # ENU: X=Dogu, Y=Kuzey.  qr_pad @ (500, 0)
+    # --- 4) the target: a textured grass patch + the qr_pad ---
+    # ENU: X=East, Y=North.  qr_pad @ (500, 0)
     world.append(frag("""
     <include>
       <uri>model://grass_field</uri>
       <name>grass_field</name>
       <pose>500 0 0 0 0 0</pose>
     </include>"""))
-    # ⚠️ qr_pad DEGIL qr_pad_v1.
-    #    Taban qr_pad modeli QR Versiyon 2 ve sessiz bolgesi
-    #    ~0.2 modul (standart 4 ister). Olculdu:
-    #        qr_pad      QR dokunun %98'i, sessiz bolge 8 px  = 0.2 modul
-    #        qr_pad_v1   QR dokunun %84'u, sessiz bolge 80 px = 2 modul
-    #    Haberlesme Dokumani §9 yarismada Versiyon 1 kullanilacagini
-    #    soyluyor ve 40 m decode esigi V1 dokusuyla olculdu.
-    #    Duzeltilmis model daha once yapilmisti ama DUNYAYA HIC BAGLANMAMIS;
-    #    kameralı ucusta 0 QR tespiti bunun sonucuydu.
-    #    <name> "qr_pad" kaliyor: tests/test_hedef_koordinati.py bu isimle
-    #    pad'in pozunu okuyup config hedefini dogruluyor.
+    # ⚠️ qr_pad_v1, NOT qr_pad.
+    #    The base qr_pad model is QR Version 2 with a quiet zone of about
+    #    0.2 modules (the standard asks for 4). Measured:
+    #        qr_pad      QR is 98 % of the texture, quiet zone 8 px  = 0.2 modules
+    #        qr_pad_v1   QR is 84 % of the texture, quiet zone 80 px = 2 modules
+    #    The competition uses Version 1, and the 40 m decode threshold was
+    #    measured against the V1 texture.
+    #    The corrected model had been built earlier but was NEVER WIRED INTO
+    #    THE WORLD; that is why the camera flight produced 0 QR detections.
+    #    The <name> stays "qr_pad": tests/test_hedef_koordinati.py looks the
+    #    pad up by that name to verify the config target.
     world.append(frag("""
     <include>
       <uri>model://qr_pad_v1</uri>
       <name>qr_pad</name>
       <pose>500 0 0 0 0 0</pose>
     </include>"""))
-    print("  grass_field + qr_pad_v1 eklendi @ (500, 0)")
+    print("  grass_field + qr_pad_v1 added @ (500, 0)")
 
-    # --- 5) TANI KAMERASI: bilinen pozdan QR'a bakan bagimsiz kamera ---
-    # Ucagin kamerasi calismiyorsa sorunun montajda mi sahnede mi oldugunu
-    # ayirt etmek icin. 60 m irtifa, 55 derece bakis -> yatay 42 m.
-    # HFOV ucagin kamerasiyla AYNI olmali, yoksa tani temsil etmez.
+    # --- 5) DIAGNOSTIC CAMERA: an independent camera looking at the QR
+    #        from a known pose ---
+    # It exists to separate "the mount is wrong" from "the scene is wrong"
+    # when the aircraft's own camera sees nothing. 60 m altitude, 55 degree
+    # look-down -> 42 m of ground distance.
+    # Its HFOV must MATCH the aircraft's camera, or the diagnosis does not
+    # represent anything.
     hfov = hfov_rad()
     world.append(frag("""
     <model name="diag_cam">
@@ -128,23 +134,23 @@ def main(src, dst):
         </sensor>
       </link>
     </model>""" % hfov))
-    print("  diag_cam eklendi @ (458, 0, 60) pitch=+55 -> /diag_cam")
-    print("  diag_cam HFOV = %s rad (model.sdf'ten okundu)" % hfov)
+    print("  diag_cam added @ (458, 0, 60) pitch=+55 -> /diag_cam")
+    print("  diag_cam HFOV = %s rad (read from model.sdf)" % hfov)
 
     tree.write(dst, encoding="utf-8", xml_declaration=True)
-    print("  yazildi: %s" % dst)
+    print("  written: %s" % dst)
 
-    # dogrulama
+    # verification
     t2 = ET.parse(dst)
     w2 = t2.getroot().find("world")
     sc = w2.find("scene")
     print()
-    print("  DOGRULAMA:")
-    print("    world adi     : %s" % w2.get("name"))
-    print("    scene/sky     : %s" % ("VAR" if sc is not None and sc.find("sky") is not None else "YOK"))
+    print("  VERIFICATION:")
+    print("    world name      : %s" % w2.get("name"))
+    print("    scene/sky       : %s" % ("present" if sc is not None and sc.find("sky") is not None else "MISSING"))
     print("    scene/background: %s" % (sc.find("background").text if sc is not None and sc.find("background") is not None else "?"))
-    print("    include sayisi: %d" % len(w2.findall("include")))
-    print("    light sayisi  : %d" % len(w2.findall("light")))
+    print("    include count   : %d" % len(w2.findall("include")))
+    print("    light count     : %d" % len(w2.findall("light")))
     return 0
 
 

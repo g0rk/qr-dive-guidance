@@ -1,17 +1,18 @@
 #!/usr/bin/env python3
-"""Irtifaya gore QR decode olcumu - GERCEK gz render'i + GERCEK algi kodu."""
+"""Measure QR decode against altitude - REAL gz render, REAL perception code."""
 import math
 import os
 import sys
 
-# ⚠️ Depo koku, DOSYANIN KENDI KONUMUNDAN turetilir - mutlak yol yazilmaz.
-#    Eskiden "/mnt/c/Users/<kullanici>/..." diye sabitti: hem baskasinin
-#    makinesinde calismazdi hem de public depoda kullanici adini sizdirirdi.
+# ⚠️ The repository root is derived FROM THIS FILE'S OWN LOCATION - never
+#    written as an absolute path. It used to be hard-coded as
+#    "/mnt/c/Users/<name>/...", which both failed on anyone else's machine
+#    and leaked a username into a public repository.
 SIM = os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 sys.path.insert(0, SIM)
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 
-import cam_params  # kamera parametrelerinin tek kaynagi (model.sdf'i okur)
+import cam_params  # the single source of camera parameters (reads model.sdf)
 
 import logging
 logging.disable(logging.WARNING)
@@ -90,17 +91,18 @@ def main():
         rclpy.spin_once(node, timeout_sec=0.2)
         t += 0.2
 
-    # ⚠️ Eskiden `1920 / math.degrees(0.8954)` diye SABIT yaziliydi. Kamera
-    #    parametresi model.sdf'te degisirse bu tablo sessizce yanlis "teorik
-    #    px" uretirdi. Artik tek kaynaktan okunuyor (cam_params.py).
+    # ⚠️ This used to be written out as `1920 / math.degrees(0.8954)`. If the
+    #    camera parameter changed in model.sdf, this table would silently
+    #    produce a wrong "theoretical px" column. It now comes from the single
+    #    source (cam_params.py).
     ppd = cam_params.pixels_per_degree()
     print()
     print("=" * 74)
-    print("  QR DECODE - IRTIFAYA GORE  (gz render, gercek algi kodu)")
-    print("  V1 QR, 2 modul sessiz bolge, 2 m plaka, dalis 55 derece")
+    print("  QR DECODE vs ALTITUDE  (gz render, real perception code)")
+    print("  V1 QR, 2-module quiet zone, 2 m plates, 55 degree dive")
     print("=" * 74)
     print("  %6s %8s %8s %9s %8s %8s" %
-          ("irtifa", "yatay", "egik", "teorik px", "olculen", "decode"))
+          ("alt", "ground", "slant", "theory px", "measured", "decode"))
     print("  " + "-" * 60)
     for a in ALTS:
         d = a / math.tan(math.radians(55.0))
@@ -114,10 +116,10 @@ def main():
     ok = [a for a in ALTS if node.hit[a] > 0]
     print()
     if ok:
-        print("  ✅ DECODE OLAN EN YUKSEK IRTIFA: %d m" % max(ok))
-        print("     (kare sayisi az; esik civarinda kararsizlik normal)")
+        print("  HIGHEST ALTITUDE THAT DECODES: %d m" % max(ok))
+        print("     (few frames per step; instability near the threshold is normal)")
     else:
-        print("  ❌ HICBIR IRTIFADA DECODE YOK")
+        print("  NO DECODE AT ANY ALTITUDE")
     node.destroy_node()
     rclpy.shutdown()
     return 0 if ok else 2

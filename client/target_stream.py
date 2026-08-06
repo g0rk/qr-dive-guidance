@@ -12,23 +12,23 @@ MAVSDK_PORT = "udp://:14542"
 
 async def target_stream(out_queue: asyncio.Queue, hz: float = 20.0) -> None:
     """
-    Her tick'te out_queue'ya bir dict koyar:
+    Put one dict on out_queue per tick:
 
         {
             "type": "target",
-            "lat":  float,   # derece
-            "lon":  float,   # derece
-            "alt":  float,   # metre (AMSL)
-            "vx":   float,   # m/s (kuzey)
-            "vy":   float,   # m/s (doğu)
-            "vz":   float,   # m/s (aşağı)
-            "roll":  float,  # derece
-            "pitch": float,  # derece
-            "yaw":   float,  # derece
+            "lat":  float,   # degrees
+            "lon":  float,   # degrees
+            "alt":  float,   # metres (AMSL)
+            "vx":   float,   # m/s (north)
+            "vy":   float,   # m/s (east)
+            "vz":   float,   # m/s (down)
+            "roll":  float,  # degrees
+            "pitch": float,  # degrees
+            "yaw":   float,  # degrees
         }
 
-    Bağlantı koptuğunda veya veri gelmediğinde loglar ve yeniden dener.
-    Dışarıdan iptal edilmek için asyncio.CancelledError beklenir.
+    On a dropped connection or missing data it logs and retries.
+    Cancellation from outside arrives as asyncio.CancelledError.
     """
     dt = 1.0 / hz
 
@@ -38,7 +38,7 @@ async def target_stream(out_queue: asyncio.Queue, hz: float = 20.0) -> None:
             logger.info("Connecting to target drone on %s ...", MAVSDK_PORT)
             await drone.connect(system_address=MAVSDK_PORT)
 
-            # Bağlantı onayı — hazır olana kadar bekle
+            # Wait for the connection to be confirmed.
             async for state in drone.core.connection_state():
                 if state.is_connected:
                     logger.info("Target drone connected.")
@@ -60,14 +60,15 @@ async def _stream_loop(
     out_queue: asyncio.Queue,
     dt: float,
 ) -> None:
-    """Bağlı drone'dan periyodik olarak telemetri okur."""
+    """Poll telemetry from the connected drone at a fixed rate."""
 
-    # Her stream ayrı bir async generator; en son değeri tutmak için basit holder.
+    # Each stream is its own async generator; a tiny holder keeps the
+    # latest value from each.
     pos   = _Holder()
     vel   = _Holder()
     euler = _Holder()
 
-    # Arka planda stream task'ları başlat
+    # Start the stream tasks in the background.
     tasks = [
         asyncio.create_task(_pos_stream(drone, pos),   name="t_pos"),
         asyncio.create_task(_vel_stream(drone, vel),   name="t_vel"),
@@ -78,7 +79,7 @@ async def _stream_loop(
         while True:
             await asyncio.sleep(dt)
 
-            # Henüz veri gelmediyse bu tick'i atla
+            # Skip this tick until every stream has produced something.
             if not (pos.value and vel.value and euler.value):
                 continue
 
@@ -95,7 +96,8 @@ async def _stream_loop(
                 "yaw":   euler.value.yaw_deg,
             }
 
-            # Kuyruk doluysa eski veriyi at, yenisini koy (non-blocking)
+            # If the queue is full, drop the oldest entry and push the new
+            # one - stale target positions are worthless.
             if out_queue.full():
                 try:
                     out_queue.get_nowait()
@@ -110,10 +112,10 @@ async def _stream_loop(
         await asyncio.gather(*tasks, return_exceptions=True)
 
 
-# ── Telemetri stream helper'ları ──────────────────────────────────────────────
+# -- Telemetry stream helpers ------------------------------------------------
 
 class _Holder:
-    """En son telemetri değerini tutan basit kap."""
+    """Minimal container holding the most recent telemetry value."""
     __slots__ = ("value",)
     def __init__(self) -> None:
         self.value = None
