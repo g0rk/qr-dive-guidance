@@ -52,7 +52,15 @@ nohup "$PX4_DIR/build/px4_sitl_default/bin/px4" > /tmp/px4_sitl.log 2>&1 &
 sleep 10
 
 echo "=== 4) camera bridge ==="
+# ⚠️ `set +u` around the ROS setup, and it is NOT cosmetic. ROS 2's
+#    setup.bash reads AMENT_TRACE_SETUP_FILES without a default, which is an
+#    unbound-variable error under the `set -u` at the top of this file -- and
+#    a failing `source` aborts the whole script. This file therefore used to
+#    die right here, silently: gz and PX4 were left running, but the camera
+#    bridge, the mission and the perception window never started at all.
+set +u
 source /opt/ros/humble/setup.bash
+set -u
 nohup ros2 run ros_gz_bridge parameter_bridge \
       "/camera@sensor_msgs/msg/Image[gz.msgs.Image" > /tmp/bridge.log 2>&1 &
 sleep 6
