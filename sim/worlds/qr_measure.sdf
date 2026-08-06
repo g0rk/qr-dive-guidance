@@ -1,6 +1,6 @@
 <?xml version='1.0' encoding='utf-8'?>
 <sdf version="1.9">
-  <world name="qr_target">
+  <world name="qr_measure">
     <physics type="ode">
       <max_step_size>0.004</max_step_size>
       <real_time_factor>1.0</real_time_factor>
@@ -258,11 +258,11 @@
       <uri>model://qr_pad_v1</uri>
       <name>qr_pad</name>
       <pose>500.0 0.0 0 0 0 0</pose>
-    </include><model name="diag_cam">
+    </include><model name="cam60">
       <static>true</static>
       <pose>457.9875 0.0000 60.0000 0 0.959931 0</pose>
       <link name="link">
-        <sensor name="diag_cam" type="camera">
+        <sensor name="cam60" type="camera">
           <camera>
             <horizontal_fov>0.895</horizontal_fov>
             <image><width>1920</width><height>1080</height></image>
@@ -270,7 +270,82 @@
           </camera>
           <always_on>1</always_on>
           <update_rate>10</update_rate>
-          <topic>diag_cam</topic>
+          <topic>cam60</topic>
+        </sensor>
+      </link>
+    </model><model name="cam50">
+      <static>true</static>
+      <pose>464.9896 0.0000 50.0000 0 0.959931 0</pose>
+      <link name="link">
+        <sensor name="cam50" type="camera">
+          <camera>
+            <horizontal_fov>0.895</horizontal_fov>
+            <image><width>1920</width><height>1080</height></image>
+            <clip><near>0.1</near><far>3000</far></clip>
+          </camera>
+          <always_on>1</always_on>
+          <update_rate>10</update_rate>
+          <topic>cam50</topic>
+        </sensor>
+      </link>
+    </model><model name="cam40">
+      <static>true</static>
+      <pose>471.9917 0.0000 40.0000 0 0.959931 0</pose>
+      <link name="link">
+        <sensor name="cam40" type="camera">
+          <camera>
+            <horizontal_fov>0.895</horizontal_fov>
+            <image><width>1920</width><height>1080</height></image>
+            <clip><near>0.1</near><far>3000</far></clip>
+          </camera>
+          <always_on>1</always_on>
+          <update_rate>10</update_rate>
+          <topic>cam40</topic>
+        </sensor>
+      </link>
+    </model><model name="cam30">
+      <static>true</static>
+      <pose>478.9938 0.0000 30.0000 0 0.959931 0</pose>
+      <link name="link">
+        <sensor name="cam30" type="camera">
+          <camera>
+            <horizontal_fov>0.895</horizontal_fov>
+            <image><width>1920</width><height>1080</height></image>
+            <clip><near>0.1</near><far>3000</far></clip>
+          </camera>
+          <always_on>1</always_on>
+          <update_rate>10</update_rate>
+          <topic>cam30</topic>
+        </sensor>
+      </link>
+    </model><model name="cam25">
+      <static>true</static>
+      <pose>482.4948 0.0000 25.0000 0 0.959931 0</pose>
+      <link name="link">
+        <sensor name="cam25" type="camera">
+          <camera>
+            <horizontal_fov>0.895</horizontal_fov>
+            <image><width>1920</width><height>1080</height></image>
+            <clip><near>0.1</near><far>3000</far></clip>
+          </camera>
+          <always_on>1</always_on>
+          <update_rate>10</update_rate>
+          <topic>cam25</topic>
+        </sensor>
+      </link>
+    </model><model name="cam20">
+      <static>true</static>
+      <pose>485.9958 0.0000 20.0000 0 0.959931 0</pose>
+      <link name="link">
+        <sensor name="cam20" type="camera">
+          <camera>
+            <horizontal_fov>0.895</horizontal_fov>
+            <image><width>1920</width><height>1080</height></image>
+            <clip><near>0.1</near><far>3000</far></clip>
+          </camera>
+          <always_on>1</always_on>
+          <update_rate>10</update_rate>
+          <topic>cam20</topic>
         </sensor>
       </link>
     </model></world>

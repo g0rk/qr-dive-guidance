@@ -18,8 +18,21 @@ cd ~/PX4-Autopilot && make px4_sitl gz_rc_cessna_cam
 | `models/nose_cam` | Nose camera. Derived from PX4's `mono_cam`, **with real hardware parameters** |
 | `models/rc_cessna_cam` | `rc_cessna` + `nose_cam`, patterned on PX4's `x500_mono_cam` |
 | `models/grass_field` | Textured grass around the pad, so detection is tested against a realistic background |
-| `worlds/qr_target.sdf` | `default.sdf` + `qr_pad` @ (500 m east, 0) |
+| `worlds/qr_target.sdf` | **The flight world.** `default.sdf` + `qr_pad` @ (500 m east, 0) + one diagnostic camera |
+| `worlds/qr_measure.sdf` | **The measurement world.** Same scene, no aircraft, six static cameras at 60/50/40/30/25/20 m — the rig behind the decode-threshold table |
 | `airframes/4009_gz_rc_cessna_cam` | Selects the world and the model |
+
+Both worlds are generated, not hand-edited:
+
+```bash
+python3 ../sim/tools/build_world.py           ~/PX4-Autopilot/Tools/simulation/gz/worlds/default.sdf worlds/qr_target.sdf
+python3 ../sim/tools/build_world.py --measure ~/PX4-Autopilot/Tools/simulation/gz/worlds/default.sdf worlds/qr_measure.sdf
+```
+
+They are kept apart on purpose. Six extra 1920×1080 cameras at 10 Hz is about
+six times the render load of the aircraft's own camera; carrying them through
+every flight would slow the lockstep and corrupt the timing numbers this
+repository measures.
 
 ## Camera parameters — no longer an assumption
 
@@ -131,10 +144,6 @@ silence.
   straight through them. That is fine for this purpose, but it does mean the
   simulation cannot tell you anything about an impact.
 - The camera intrinsics come from a datasheet, not a calibration (see above).
-- `sim/tools/measure_alt.py` subscribes to `/cam60` … `/cam20`, but nothing in
-  this repository generates a world with those cameras. The decode-threshold
-  measurement it reports was taken with a multi-camera world that was never
-  committed. Reproducing it currently means building that world by hand.
 
 ### Gaps that used to be listed here and are now fixed
 
@@ -143,3 +152,10 @@ silence.
 - ~~Quiet zone of about 0.2 modules~~ — `qr_pad_v1` uses 2 modules
   (80 px / 840 px). The base `qr_pad` still has the small quiet zone on
   purpose, as a record of what the problem looked like.
+- ~~`measure_alt.py` subscribes to `/cam60` … `/cam20`, but nothing here
+  generates a world with those cameras~~ — the world it needed had never been
+  committed, so the decode-threshold table could not be reproduced by anyone.
+  `build_world.py --measure` now generates `worlds/qr_measure.sdf`, the world
+  is committed, and `measure_alt.py` reads the altitudes and slant ranges back
+  out of it instead of carrying its own copy of the list. Re-measured on the
+  rebuilt rig, the table came out as published (40 m → 70 px, 4/4).
