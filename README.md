@@ -266,4 +266,5 @@ explaining how that bug happened:
 See [LICENSE](LICENSE). The base flight-control skeleton came from a shared
 first version; the simulation environment, measurement tooling, dive
 geometry and guidance work in this repository were added afterwards. The
-commit history carries the reasoning for each step.
+commit history carries the reasoning for each step — those messages are in
+Turkish, but the same reasoning is repeated in the code comments.

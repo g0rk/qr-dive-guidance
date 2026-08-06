@@ -3,21 +3,23 @@
 
 import math
 
-# Dalis geometrisi hesabi ayri, BAGIMSIZ bir modulde: dive_geometry.py
-# (hicbir bagimliligi yok - PX4, MAVSDK, OpenCV, Gazebo hicbiri gerekmez;
-#  baska projelere oldugu gibi kopyalanabilsin diye boyle ayrildi).
+# The dive geometry is computed in a separate, DEPENDENCY-FREE module:
+# dive_geometry.py. It needs no PX4, MAVSDK, OpenCV or Gazebo, so it can be
+# copied into another project as-is. That is why it lives on its own.
 import dive_geometry
 
 # Connection
 #
-# ⚠️ OLCULDU 2026-08-05: eskiden 14541'di ve PX4 SITL'e HIC BAGLANMIYORDU.
-#    PX4 SITL (instance 0) onboard MAVLink'i su sekilde aciyor:
+# ⚠️ MEASURED 2026-08-05: this used to be 14541, and it NEVER connected to
+#    PX4 SITL. PX4 SITL (instance 0) opens its onboard MAVLink like this:
 #        mavlink mode: Onboard, ... on udp port 14580 remote port 14540
-#    yani telemetriyi 14540'a GONDERIYOR; MAVSDK o portu DINLEMELI.
-#    Iki port da denendi (tools yerine dogrudan MAVSDK ile):
-#        udp://:14540 -> BAGLANDI, telemetri akti (rel_alt, lat okundu)
-#        udp://:14541 -> connect() zaman asimi, hicbir paket gelmedi
-#    14541 ile main.py baglantida sonsuza kadar beklerdi.
+#    That is, it SENDS telemetry to 14540, so MAVSDK has to LISTEN there.
+#    Both ports were tried against a live SITL, with MAVSDK directly rather
+#    than through the project's own tooling:
+#        udp://:14540 -> CONNECTED, telemetry flowed (rel_alt, lat readable)
+#        udp://:14541 -> connect() timed out, not a single packet arrived
+#    With 14541, main.py would wait on the connection forever. No error, no
+#    log line - just a program that never got past startup.
 SYSTEM_ADDRESS = "udp://:14540"
 
 # FSM Timing
@@ -28,33 +30,35 @@ AUTO_START = True
 
 # Target coordinates
 #
-# SIMULASYON HEDEFI. gz dunyasindaki qr_pad'in konumuna karsilik gelir:
-#   dunya : qr_target.sdf, qr_pad @ (X=500 m dogu, Y=0)   [ENU: X=Dogu, Y=Kuzey]
-#   orijin: dunyanin <spherical_coordinates> etiketi
+# SIMULATION TARGET. Corresponds to the qr_pad in the gz world:
+#   world : qr_target.sdf, qr_pad @ (X=500 m east, Y=0)   [ENU: X=East, Y=North]
+#   origin: the world's own <spherical_coordinates> tag
 #           47.397971057728974 / 8.546163739800146
-#   -> 500 m dogu  =>  47.3979711 / 8.5527992
+#   -> 500 m east  =>  47.3979711 / 8.5527992
 #
-# ⚠️ IKI FARKLI "HOME" VAR - KARISTIRILMASI 50 m HATA VERIYOR (olculdu):
+# ⚠️ THERE ARE TWO DIFFERENT "HOME" ORIGINS - CONFLATING THEM COSTS 50 m
+#    (measured):
 #
-#     1) PX4'un belgelenmis varsayilani  47.397742 / 8.545594
-#        (PX4_HOME_LAT / PX4_HOME_LON; gz DISINDAKI simulatorlerde gecerli)
-#     2) gz DUNYA DOSYASININ kendi <spherical_coordinates> etiketi
-#        47.397971 / 8.546164   <- gz simulatorken GECERLI OLAN BU
+#     1) PX4's documented default        47.397742 / 8.545594
+#        (PX4_HOME_LAT / PX4_HOME_LON; applies to simulators OTHER than gz)
+#     2) the gz WORLD FILE's own <spherical_coordinates> tag
+#        47.397971 / 8.546164   <- this is the one that applies under gz
 #
-#    Ikisi arasinda 49.9 m var. Onceki deger (47.3977420 / 8.5522294)
-#    (1)'e 500 m eklenerek turetilmisti, yani pad'in 49.9 m GUNEYBATISINDA
-#    bir noktaya isaret ediyordu:
-#        dunya orijininden config hedefine : 457.8 m @ 93.2 derece
-#        dunya orijininden gercek pad'e    : 500.0 m @ 90.0 derece
-#    QR pad 2 m x 2 m; 49.9 m hata kenarin 25 KATI -> ucak bos cimene dalardi.
+#    They are 49.9 m apart. The previous value (47.3977420 / 8.5522294) was
+#    derived by adding 500 m to (1), so it pointed at a spot 49.9 m SOUTHWEST
+#    of the pad:
+#        world origin to the config target : 457.8 m @ 93.2 degrees
+#        world origin to the real pad      : 500.0 m @ 90.0 degrees
+#    The QR pad is 2 m x 2 m, so a 49.9 m error is 25 TIMES its edge length.
+#    The aircraft dived at empty grass.
 #
-#    Dogrulamasi tests/test_hedef_koordinati.py'de kilitlendi: test dunya
-#    SDF'ini okuyup bu iki sayiyi yeniden turetiyor. Dunya degisirse test
-#    duser, sessizce ayrisamaz.
+#    The fix is locked down by tests/test_hedef_koordinati.py: the test reads
+#    the world SDF and re-derives both numbers. If the world moves, the test
+#    fails - the two cannot drift apart silently.
 #
-# ⚠️ GERCEK GOREVDE bu deger sunucudan gelir (/api/qr_koordinati);
-#    mission.target_lat_lon() once YKI'den gelen degeri kullanir,
-#    burasi yalnizca yedek.
+# ⚠️ ON A REAL MISSION this value comes from the server (/api/qr_koordinati);
+#    mission.target_lat_lon() prefers the value from the ground station and
+#    falls back to this one.
 TARGET_LATITUDE_DEG = 47.3979711
 TARGET_LONGITUDE_DEG = 8.5527992
 
@@ -66,155 +70,167 @@ MIN_GROUND_SPEED_M_S = 8.0              # minimum speed to validate alignment
 # Approach
 APPROACH_GHOST_DISTANCE_M = 400.0       # ghost waypoint offset behind target
 
-# ⚠️ P2: GORELI irtifa (kalkis sahasina gore). vehicle.goto_location_rel()
-#    bunu MAVSDK sinirinda AMSL'e cevirir. Eskiden dogrudan goto_location()'a
-#    veriliyordu (AMSL bekler) ve deniz seviyesinde olmayan her sahada
-#    dalis hic tetiklenmiyordu.
+# ⚠️ This is a RELATIVE altitude (above the launch site).
+#    vehicle.goto_location_rel() converts it to AMSL at the MAVSDK boundary.
+#    It used to be handed straight to goto_location(), which expects AMSL, so
+#    at any launch site not at sea level the dive never triggered at all.
 #
-# ⚠️ DALIS ESIGINDEN YUKSEK OLMALI. Eskiden ikisi de 100.0'di, yani HIC PAY
-#    YOKTU: approach_state dalis izni icin rel_alt >= DIVE_MIN_ENTRY_ALTITUDE_M
-#    ariyor; ucak 100 m'ye birkac santim kala tetik mesafesine girerse dalis
-#    reddedilip ABORT'a dusuyordu. 20 m pay birakildi.
+# ⚠️ IT MUST STAY ABOVE THE DIVE ENTRY THRESHOLD. Both used to be 100.0, which
+#    left NO MARGIN: approach_state only permits the dive while
+#    rel_alt >= DIVE_MIN_ENTRY_ALTITUDE_M, so if the aircraft reached the
+#    trigger distance a few centimetres below 100 m, the dive was refused and
+#    the mission dropped to ABORT. 20 m of margin was added.
 APPROACH_SAFE_ALTITUDE_M = 120.0
 
-# Kalkis irtifasi. ⚠️ Eskiden takeoff_state.py:30'da KODA GOMULUYDU
-# (`self._target_alt_m = 100`), config'de yoktu. Dalis zinciriyle bagli
-# oldugu icin buraya tasindi: bu uc deger birlikte dusunulmeli
+# Take-off altitude. ⚠️ This used to be HARD-CODED in takeoff_state.py:30
+# (`self._target_alt_m = 100`) and did not exist in config at all. It was
+# moved here because it is part of the dive chain: these three values only
+# make sense when read together
 #   TAKEOFF_ALTITUDE_M >= APPROACH_SAFE_ALTITUDE_M > DIVE_MIN_ENTRY_ALTITUDE_M
 TAKEOFF_ALTITUDE_M = 120.0
 
 # Dive (Safety Critical)
 #
-# ⚠️ P3: DALIS ACISI IKI KISITIN KESISIMI
+# ⚠️ THE DIVE ANGLE IS THE INTERSECTION OF TWO CONSTRAINTS
 #
-#  1) ALT SINIR - QR PLAKALARI (sartname s.17): "Kodun, duz ucus sirasinda
-#     okunmasini engellemek amaciyla dort tarafi 45 derecelik acili plakalar
-#     ile kapatilacaktir. Plakalarin yuksekligi 3m olacaktir."
-#     45 derecelik plakada ust kenarin yatay cikintisi yuksekligine esittir,
-#     yani QR'in TAMAMINI gormek icin bakis acisi >= 45 derece olmali.
-#     Sartname s.18 "QR kod sinirlarinin TAMAMI AV'da olmalidir" diyor ve
-#     tolerans tanimiyor -> plaka kapatirsa gorev basarisiz.
+#  1) LOWER BOUND - THE QR PLATES. The competition rulebook (p.17) requires
+#     the code to be "covered on all four sides by plates angled at 45
+#     degrees, 3 m tall, so that it cannot be read in level flight."
+#     On a 45-degree plate the top edge overhangs by exactly its own height,
+#     so seeing the WHOLE code requires a look-down angle of at least 45
+#     degrees. The rulebook (p.18) also says the QR's boundaries must lie
+#     ENTIRELY inside the target area, and defines no tolerance - so if a
+#     plate covers any part of it, the run scores nothing.
 #
-#  2) TUTARLILIK - dalis acisi, hedefe olan GORUS HATTI acisina esit olmali.
-#     Esitse QR dalis boyunca bore-sight'ta sabit kalir (sabit kerteriz).
-#     Esit degilse QR kadrajda kayar ve AV'den cikar.
-#     tan(aci) = irtifa / yatay_mesafe
+#  2) CONSISTENCY - the dive angle should equal the LINE-OF-SIGHT angle to
+#     the target. When they match, the QR stays fixed on the boresight for
+#     the whole dive (constant bearing). When they do not, the QR drifts
+#     across the frame and leaves the target area.
+#     tan(angle) = altitude / ground_distance
 #
-#     Eski degerler bu kurali ihlal ediyordu: 100 m irtifada 105 m mesafe
-#     43.6 derecelik gorus hatti demek, ama komut 65 dereceydi. Sentetik
-#     render ile olculdu (tools/qr_dive_sim.py): eski geometride TEK BIR
-#     gecerli kare yok - bakis acisi dalis boyunca 43.6 -> 16.5 dereceye
-#     DUSUYOR ve plakalar bastan sona kapatiyor.
+#     The old values broke this rule: at 100 m altitude and 105 m distance the
+#     line of sight is 43.6 degrees, while the commanded pitch was 65. A
+#     synthetic render showed the consequence: not ONE valid frame in the old
+#     geometry - the look-down angle FALLS from 43.6 to 16.5 degrees over the
+#     dive, and the plates cover the code from start to finish.
 #
-# 55 derece secildi: plaka sinirina 10 derece pay birakir ve tetik
-# mesafesini makul tutar.
+# 55 degrees was chosen: it leaves 10 degrees of margin over the plate limit
+# and keeps the trigger distance reasonable.
 #
-# ⚠️ BU YORUM BAYATLAMISTI: eskiden "(100/tan55 = 70 m)" yaziyordu, cunku
-#    o zaman APPROACH_SAFE_ALTITUDE_M 100 idi. Sonradan 120'ye cikarildi
-#    (dalis esigine 20 m pay birakmak icin) ama yorumdaki ornek hesap
-#    guncellenmedi. Gercek deger:
+# ⚠️ THIS COMMENT ONCE WENT STALE. It used to say "(100/tan55 = 70 m)",
+#    because APPROACH_SAFE_ALTITUDE_M was 100 at the time. That constant was
+#    later raised to 120 (to leave 20 m of margin above the dive threshold)
+#    and the worked example here was not updated. The honest value was
 #        APPROACH_DIVE_ARM_DISTANCE_M = 120 / tan(55) = 84.02 m
-#    Ironik olan: bu yorum blogunun TAMAMI "iki sabit sessizce ayrilmasin"
-#    diye yazilmisti; yorumun kendisi ayrildi. Bu yuzden asagida ornek
-#    sayi degil, TURETMENIN KENDISI birakildi.
+#    The irony: this entire comment block exists to stop two constants from
+#    drifting apart silently, and the comment itself drifted. That is why what
+#    follows below is the DERIVATION rather than a worked number.
 DIVE_PITCH_DEG = -55.0                  # nose-down pitch command (negative = down)
 DIVE_ROLL_DEG = 0.0
 DIVE_THROTTLE = 0.0                     # 0.0 - 1.0
 
-# ⚠️ 20.0 -> 30.0  (OLCUME DAYALI, 2026-08-05)
+# ⚠️ 20.0 -> 30.0  (MEASURED, 2026-08-05)
 #
-#    5 kosumda pull-up KOMUTUNDAN SONRAKI irtifa kaybi olculdu:
-#        14.93 / 15.55 / 15.84 / 16.17 / 16.46 m   (ort 15.79, en kotu 16.46)
-#    Yani 20 m'de komut verince ucak 2.87 - 4.00 m'ye kadar iniyordu.
-#    Simulasyonda carpmiyor ama simulasyonda ruzgar, sensor gurultusu,
-#    arazi egimi ve gercek atalet YOK. 3 m pratikte sifir paydir.
+#    Altitude lost AFTER the pull-up command was measured over 5 runs:
+#        14.93 / 15.55 / 15.84 / 16.17 / 16.46 m   (mean 15.79, worst 16.46)
+#    So commanding the pull-up at 20 m bottomed the aircraft out between
+#    2.87 and 4.00 m. That does not crash in simulation - but simulation has
+#    no wind, no sensor noise, no terrain slope and no real inertia. Three
+#    metres is zero margin in practice.
 #
-#    30 m secildi: en kotu olculen kayip 16.46 m -> ~13.5 m pay birakir.
+#    30 m was chosen: against the worst measured loss of 16.46 m it leaves
+#    about 13.5 m.
 #
-#    ⚠️ BEDELI VAR: decode penceresi kisalir. QR ancak 40 m'den itibaren
-#       okunuyor (OTURUM-DEVIR §6) ve alcalma ~32 m/s:
-#           tetik 20 m -> pencere 0.63 s (~13 kare @20 FPS), pay  ~3.5 m
-#           tetik 26 m -> pencere 0.44 s (~9  kare),         pay  ~9.5 m
-#           tetik 30 m -> pencere 0.31 s (~6  kare),         pay ~13.5 m
-#       Sartname TEK gecerli kare istiyor, 6 kare hala yeterli.
+#    ⚠️ IT COSTS SOMETHING: the decode window gets shorter. The QR only
+#       becomes readable from about 40 m, and the descent rate is ~32 m/s:
+#           trigger 20 m -> window 0.63 s (~13 frames @20 FPS), margin  ~3.5 m
+#           trigger 26 m -> window 0.44 s (~9  frames),         margin  ~9.5 m
+#           trigger 30 m -> window 0.31 s (~6  frames),         margin ~13.5 m
+#       The rulebook needs ONE valid frame, so 6 is still enough.
 #
-#    ⚠️ BU BIR TABANDIR, hedef degil. KAMIKAZE_PULLUP_ON_QR=True oldugu
-#       icin QR okunur okunmaz zaten cikiliyor; bu deger yalnizca QR
-#       HIC okunmazsa devreye giren emniyet zeminidir.
+#    ⚠️ THIS IS A FLOOR, not a target. Because KAMIKAZE_PULLUP_ON_QR is True
+#       the aircraft already leaves the dive the moment the QR is read; this
+#       value is only the safety floor that applies when the QR is never read
+#       at all.
 DIVE_PULL_UP_ALTITUDE_M = 30.0          # AGL altitude at which PULL_UP is triggered
 DIVE_MAX_DURATION_S = 20.0              # hard timeout - abort if dive exceeds this
 
-# ⚠️ SARTNAME s.18: "Dalis baslangic icin minimum irtifa kalkis pistine
-#    goreli olarak en az 100 m olmalidir. ... Minimum dalis baslangic
-#    irtifasinin karsilanmamasi tespitinde GOREV BASARISIZ sayilacaktir."
-#    Onceki deger 80.0'di -> kural ihlali.
+# ⚠️ The rulebook (p.18) requires the dive to start at least 100 m above the
+#    runway, and states that failing to meet the minimum dive entry altitude
+#    makes the mission unsuccessful. The previous value was 80.0, which broke
+#    the rule outright.
 DIVE_MIN_ENTRY_ALTITUDE_M = 100.0
 
-# QR plakalarinin dayattigi minimum bakis acisi (sartname s.17).
+# Minimum look-down angle forced by the QR plates (rulebook p.17).
 QR_PLATE_MIN_LOOKDOWN_DEG = 45.0
 
-# QR'in okunmaya basladigi irtifa. ⚠️ TAHMIN DEGIL, OLCUM:
-# gz render'i + gercek algi kodu ile irtifa basamaklariyla bulundu
-# (OTURUM-DEVIR §6). 60 ve 50 m'de 0/4, 40 m'de 4/4 decode.
-# Bu deger SABIT KAMERA testinden gelir ve tetik mesafesi turetmesinde
-# kullanilir - orada muhafazakar olmak dogru.
+# The altitude at which the QR starts to be readable. ⚠️ NOT AN ESTIMATE - a
+# measurement: a gz render fed through the real perception code, stepped down
+# in altitude. 0/4 decodes at 60 m and at 50 m, 4/4 at 40 m.
+# This comes from a FIXED-CAMERA test and feeds the trigger distance
+# derivation, which is the right place to be conservative.
 QR_DECODE_ALTITUDE_M = 40.0
 
-# ⚠️ UCUSTA olculen ILK TESPIT irtifasi - yukaridakinden FARKLI.
-#    5 kosumda: 41.7 / 42.0 / 42.8 / 43.6 / 46.6 m  (ort 43.3)
-#    Sabit kamera testinden (40 m) YUKSEK cikiyor; egik menzil ve ROI
-#    kirpmasi lehimize calisiyor.
-#    ⚠️ EN KOTU gozlem kullanilmali. Ilk hesabimda EN IYI gozlemi (46.6)
-#       kullanip "~10 kare" demistim - IYIMSERDI. Gercekci taban 41.7.
+# ⚠️ The altitude of FIRST DETECTION measured IN FLIGHT - a different number
+#    from the one above.
+#    Over 5 runs: 41.7 / 42.0 / 42.8 / 43.6 / 46.6 m  (mean 43.3)
+#    It comes out HIGHER than the fixed-camera test (40 m); slant range and
+#    the ROI crop both work in our favour.
+#    ⚠️ USE THE WORST OBSERVATION. The first version of this estimate used the
+#       BEST one (46.6) and concluded "~10 frames" - which was optimistic. The
+#       realistic floor is 41.7.
 QR_FIRST_DETECT_ALTITUDE_M = 41.7
 
-# ⚠️ DALISIN GERCEKLESEN YOL ACISI - komut edilen pitch DEGIL.
+# ⚠️ THE DIVE'S ACHIEVED FLIGHT PATH ANGLE - not the commanded pitch.
 #
-#    Bu ikisini karistirmak bu projede pahaliya mal oldu. Fark:
-#      DIVE_PITCH_DEG = -55  -> burnun nereye BAKTIGI (komut)
-#      bu deger        =  45  -> ucagin GERCEKTE nereye GITTIGI (olculen)
+#    Confusing these two was expensive in this project. The difference:
+#      DIVE_PITCH_DEG = -55  -> where the nose POINTS (commanded)
+#      this value      =  45  -> where the aircraft actually GOES (measured)
 #
-#    Ani yol acisi dalisin ortasinda ~50 dereceye ulasiyor (pitch'e cok
-#    yakin, aralarinda 1.7 derece var). AMA ORTALAMA 45: cunku dalisin
-#    BASINDA ucak henuz burnunu indirmemis, cok yatay yol alip az irtifa
-#    kaybediyor. Tetik mesafesini belirleyen sey bu ORTALAMA.
+#    The instantaneous path angle does reach ~50 degrees mid-dive, within 1.7
+#    degrees of the commanded pitch. But the AVERAGE is 45, because early in
+#    the dive the nose has not come down yet: a lot of ground covered, little
+#    altitude lost. It is that AVERAGE that sets the trigger distance.
 #
-#    Olcumden geri cozuldu (2026-08-05): eski tetik 84.02 m'yken ucak
-#    120 m'den 40 m'ye inerken 80.1 m yatay yol aldi -> atan(80.0/80.1)
-#    = 45.0 derece.
+#    Recovered from a flight log (2026-08-05): with the old 84.02 m trigger,
+#    the aircraft covered 80.1 m of ground while descending from 120 m to
+#    40 m -> atan(80.0/80.1) = 45.0 degrees.
 DIVE_EFFECTIVE_PATH_ANGLE_DEG = 45.0
 
-# ⚠️ TURETILMIS - elle yazmayin.
+# ⚠️ DERIVED - do not hand-edit.
 #
-#    ESKI TURETME YANLISTI:
+#    THE OLD DERIVATION WAS WRONG:
 #        ARM = APPROACH_SAFE_ALTITUDE_M / tan(DIVE_PITCH_DEG) = 120/tan(55) = 84 m
-#    Iki hatasi vardi:
-#      1. KOMUT EDILEN pitch'i, GERCEKLESEN yol acisi yerine kullaniyordu.
-#      2. Hedefin decode irtifasinda kameranin ONUNDE olmasi gerektigini
-#         hesaba katmiyordu; sanki ucagin hedefe VARDIGI an onemliymis
-#         gibi davraniyordu.
+#    It had two faults:
+#      1. It used the COMMANDED pitch where the ACHIEVED path angle belongs.
+#      2. It aimed at arrival rather than at detection - as if what mattered
+#         were the moment the aircraft reaches the target, not the moment the
+#         camera has to read it.
 #
-#    SONUCU OLCULDU: ucak hedefin uzerine 40 m irtifadayken variyordu ve
-#    hedefe yalnizca 3.9 m kaliyordu. Kamera ise o irtifada yerde ONDEKI
-#    17.2-54.0 m arasini goruyor -> hedef KADRAJIN ALTINDA kaliyordu.
-#    4879 karede 0 QR tespiti bunun sonucuydu.
+#    THE CONSEQUENCE WAS MEASURED: the aircraft arrived over the target at
+#    40 m altitude with only 3.9 m to go, while at that altitude the camera
+#    sees the ground from 17.2 m to 54.0 m ahead. The target sat BELOW the
+#    bottom edge of the frame at exactly the moment it needed to be readable.
+#    4879 frames, zero QR detections.
 #
-#    DOGRU TURETME - iki parca:
-#      d_bore : decode irtifasinda hedefin bore-sight'ta olmasi icin
-#               onde olmasi gereken mesafe = h_decode / tan(pitch)
-#      d_dive : giris irtifasindan decode irtifasina inerken katedilen
-#               yatay yol = (h_giris - h_decode) / tan(gerceklesen_aci)
+#    THE CORRECT DERIVATION HAS TWO PARTS:
+#      d_bore : how far ahead the target must be so that it is on the
+#               boresight at decode altitude = h_decode / tan(pitch)
+#      d_dive : ground covered while descending from entry altitude to
+#               decode altitude = (h_entry - h_decode) / tan(path_angle)
 #
 #      ARM = d_dive + d_bore
 #          = (120-40)/tan(45) + 40/tan(55)
 #          = 80.1 + 28.0 = 108.1 m
 #
-#    Dogrulama: yeni tetikle 40 m irtifada hedefe 28.0 m kalir; kamera o
-#    irtifada 14.5-47.9 m arasini gorur -> hedef TAM BORE-SIGHT'TA.
-#    ⚠️ HESAP BURADA DEGIL: dive_geometry.py'de. O modul bagimsiz ve
-#       tasinabilir (hicbir bagimliligi yok); baska projeler kopyalayabilsin
-#       diye ayrildi. Formulu iki yerde tutmak, bu projenin tekrar eden
-#       "ayni sabitin iki kopyasi sessizce ayrilir" hatasi olurdu.
+#    Check: with the new trigger the target is 28.0 m away at 40 m altitude,
+#    and the camera sees 14.5-47.9 m ahead at that altitude - the target is
+#    right on the boresight.
+#    ⚠️ THE ARITHMETIC IS NOT HERE - it is in dive_geometry.py. That module is
+#       standalone and portable (no dependencies at all) so other projects can
+#       copy it. Keeping the formula in two places would be exactly this
+#       project's recurring failure: two copies of one constant, drifting
+#       apart in silence.
 _DIVE_PROFILE = dive_geometry.DiveProfile(
     entry_altitude_m=APPROACH_SAFE_ALTITUDE_M,
     decode_altitude_m=QR_DECODE_ALTITUDE_M,
@@ -242,184 +258,196 @@ QR_SHOW_WINDOW: bool = True
 CAMERA_INDEX: int = 0
 
 # ==========================================
-# HEDEF VURUŞ ALANI (AV) ve QR TARAMA BÖLGESİ
+# TARGET AREA (AV) AND QR SCAN REGION
 # ==========================================
-# AV = şartname Şekil 2 (Savaşan) / Şekil 4 (Kamikaze) — ikisi de AYNI:
-#   yatayda soldan ve sağdan %25, dikeyde üstten ve alttan %10 boşluk.
-#   -> x ∈ [0.25, 0.75],  y ∈ [0.10, 0.90]
-# ⚠️ HUD'daki kutu eskiden `w // 6` (=%16.7) çiziliyordu; yorumu %25 diyordu.
-#    Gerçek AV'den geniş bir kutu, AV dışındaki hedefleri "içeride" gösterir.
+# The target area is defined identically for both mission types in the
+# rulebook: 25 % clear on the left and right, 10 % clear on the top and
+# bottom.
+#   -> x in [0.25, 0.75],  y in [0.10, 0.90]
+# ⚠️ The HUD used to draw this box as `w // 6` (= 16.7 %) while the comment
+#    next to it claimed 25 %. A box wider than the real target area reports
+#    targets that are OUTSIDE it as being inside.
 AV_MARGIN_X: float = 0.25
 AV_MARGIN_Y: float = 0.10
 
-# QR taraması artık TÜM KAREYİ küçültmek yerine AV bölgesini KIRPIYOR.
+# The QR scan now CROPS the target area instead of downscaling the whole frame.
 #
-# NEDEN: eski kod `w > 800` ise kareyi yarıya indiriyordu. Bu, pyzbar'ı
-# hızlandırır ama QR'ın piksel boyunu da yarılar, yani decode menzilini
-# kısaltır (12 mm lens + 2 m QR ile ölçülen kayıp ~%30: 89 m -> 62 m).
-# Kırpmak aynı hızlanmayı verir ve çözünürlükten HİÇ feragat etmez:
-# AV zaten karenin %50 genişlik x %80 yüksekliği = piksellerin ~%40'ı.
+# WHY: the old code halved the frame whenever `w > 800`. That does speed
+# pyzbar up, but it also halves the QR's pixel size, which shortens the decode
+# range - measured with a 12 mm lens and a 2 m QR, the loss was about 30 %
+# (89 m -> 62 m). Cropping buys the same speed-up and gives up NO resolution:
+# the target area is already 50 % of the width by 80 % of the height, so about
+# 40 % of the pixels.
 QR_SCAN_ENABLED_ROI: bool = True
 
-# Tarama bölgesi AV'den ne kadar geniş olsun (kare oranı).
-# ⚠️ Şartname (s.18) kamikaze için "QR kod sınırlarının TAMAMI Hedef Vuruş
-#    Alanı'nda olmalıdır" diyor ve tolerans tanımıyor. Tam AV'ye kırpsaydık
-#    kenardan taşan bir QR kırpılmış hâliyle çözülür, kutusu AV sınırına
-#    yapışık görünür ve AV DIŞINDAKİ bir QR "içeride" sanılırdı.
-#    Geniş tarayıp sonra KATI içerme testi uyguluyoruz.
+# How much wider than the target area to scan (as a fraction of the frame).
+# ⚠️ The rulebook (p.18) requires the QR's boundaries to lie ENTIRELY inside
+#    the target area for the kamikaze run, and defines no tolerance. Cropping
+#    exactly to the target area would be a trap: a QR hanging over the edge
+#    would still decode from its cropped remains, its box would appear flush
+#    with the target-area boundary, and a QR that is actually OUTSIDE would be
+#    reported as inside. So we scan wide and then apply a STRICT containment
+#    test.
 QR_SCAN_AV_PAD: float = 0.08
 
-# Kırpılmış bölgeyi ayrıca küçültmek istersen (1 = küçültme yok).
-# Kırpma zaten yeterli hızlanmayı verdiği için varsayılan 1.
+# Optional extra downscale of the cropped region (1 = no downscale).
+# Cropping already provides enough speed-up, so the default is 1.
 QR_SCAN_DOWNSCALE: int = 1
 
 
 # ==========================================
-# KAMIKAZE - DALISTA QR GORSEL MERKEZLEME  [P4]
+# KAMIKAZE - VISUAL QR CENTERING DURING THE DIVE
 # ==========================================
-# Orijinal dalis tamamen KORDU: sabit DIVE_ROLL_DEG / DIVE_PITCH_DEG
-# gonderiyordu, kamerayi hic kullanmiyordu.
+# The original dive was completely BLIND: it sent a fixed DIVE_ROLL_DEG /
+# DIVE_PITCH_DEG and never used the camera at all.
 
 KAMIKAZE_QR_CENTERING: bool = True
 
-# Normalize hata (ex, ey in [-1,1]) -> aci komutu kazanclari.
-KAMIKAZE_QR_ROLL_GAIN: float  = 12.0   # ex=1.0 (QR tam kenarda) -> 12 derece roll
-KAMIKAZE_QR_PITCH_GAIN: float = 8.0    # ey=1.0 -> 8 derece pitch degisimi
+# Normalised error (ex, ey in [-1,1]) -> angle command gains.
+KAMIKAZE_QR_ROLL_GAIN: float  = 12.0   # ex=1.0 (QR at the frame edge) -> 12 deg roll
+KAMIKAZE_QR_PITCH_GAIN: float = 8.0    # ey=1.0 -> 8 deg of pitch change
 
-# ⚠️ Sinirlar DAR: dalis gorevin en riskli fazi. Merkezleme kucuk bir
-#    duzeltmedir, manevra degil.
+# ⚠️ The limits are DELIBERATELY TIGHT: the dive is the riskiest phase of the
+#    mission. Centering is a small correction, not a manoeuvre.
 KAMIKAZE_QR_MAX_ROLL_DEG: float        = 15.0   # +-
-KAMIKAZE_QR_MAX_PITCH_DELTA_DEG: float = 10.0   # DIVE_PITCH_DEG etrafinda +-
+KAMIKAZE_QR_MAX_PITCH_DELTA_DEG: float = 10.0   # +- around DIVE_PITCH_DEG
 
-# ⚠️ EMNIYET: bundan eski QR verisiyle ASLA komut uretilmez. Bayat konumla
-#    dalis duzeltmek, hedefin YANINA yonelmek demektir. Veri bayatsa dalis
-#    sabit (kor) attitude'a geri duser.
+# ⚠️ SAFETY: no command is ever produced from QR data older than this.
+#    Correcting a dive with a stale position means steering at where the
+#    target USED to be. When the data is stale the dive falls back to a fixed
+#    (blind) attitude.
 KAMIKAZE_QR_MAX_AGE_S: float = 0.5
 
-# QR okununca dalisi bitirip PULL_UP'a gec.
+# End the dive and go to PULL_UP once the QR has been read.
 KAMIKAZE_PULLUP_ON_QR: bool = True
 
 # ==========================================
-# QR OKUNDUKTAN SONRA NE KADAR DEVAM EDILECEK
+# HOW LONG TO CONTINUE AFTER THE QR IS READ
 # ==========================================
-# ⚠️ OLCULEN SORUN: ilk gecerli tespitte HEMEN cikilinca ucus boyunca
-#    YALNIZCA 1 cozulebilir kare topluyorduk. Bagimsiz sayac (her kareyi
-#    tam cozunurlukte tarayan sim/tools/ucus_videosu.py) 3687 karede 1
-#    tespit buldu; o karede QR 70 piksel - olculen decode esiginin TAM
-#    USTU (40 m'de 70 px 4/4, 50 m'de 0/4).
-#    Sartname tek gecerli kare istiyor, yani geciyoruz - ama sifir marjla.
-#    O tek kare kaybolursa (sikistirma, zamanlama, ruzgar) 300 puan gider.
+# ⚠️ MEASURED PROBLEM: pulling up on the first valid detection collected
+#    exactly ONE decodable frame per flight. An independent counter that
+#    decodes every frame at full resolution (sim/tools/ucus_videosu.py) found
+#    1 detection in 3687 frames, and in that frame the QR was 70 pixels wide -
+#    right ON the measured decode threshold (4/4 at 40 m / 70 px, 0/4 at
+#    50 m). One frame satisfies the requirement, so the run passes - with zero
+#    margin. Lose that single frame to compression, timing or wind and the run
+#    scores nothing.
 #
-# SARTNAME NE DIYOR (s.20):
-#    "kamikaze paketi icerisinde gonderilen DALIS BITIS ZAMANI esas alinir.
-#     Dalis bitis zamanindan 1 saniye once ve 1 saniye sonra olmak uzere
-#     2 saniyelik zaman dilimi uzerinden kontrol edilir. Bu zaman dilimi
-#     icindeki EN AZ 1 KAREDE QR kod sinirlarinin tamami Hedef Vurus
-#     Alani'nda olmalidir."
-#    Alcalma ~32 m/s, yani 1 saniye = 32 METRE irtifa. Pencere +-1 sn
-#    oldugu icin dalis bitisinin 32 m ustunden 32 m altina kadar her kare
-#    pencerenin ICINDE. QR ~46 m'den itibaren cozulebiliyor -> devam
-#    etmenin pencere acisindan MALIYETI YOK, yalnizca kazanci var.
+# WHAT THE RULEBOOK SAYS (p.20): validation uses the dive-end time reported in
+#    the kamikaze packet, and checks a two-second window - one second before
+#    and one second after it. At least ONE frame inside that window must show
+#    the QR's boundaries entirely within the target area.
+#    The descent rate is ~32 m/s, so one second is 32 METRES of altitude.
+#    Because the window is +-1 s, every frame from 32 m above the dive end to
+#    32 m below it is INSIDE the window. The QR is decodable from about 46 m,
+#    so continuing costs NOTHING in window terms - it is pure gain.
 #
-# NEDEN ZAMAN DEGIL IRTIFA:
-#    Baglayici kisit bir IRTIFA. Sartname s.29: "Minimum ve maksimum ucus
-#    irtifasi... yarismacilara BILDIRILECEKTIR" -> henuz BELLI DEGIL.
-#    s.21: "Kamikaze gorevi yapilirken ucus irtifa limitinin altina
-#    inildigi durumda ALAN DISINA CIKIS olarak degerlendirilecektir."
-#    "0.3 saniye devam et" komutunun irtifa maliyeti alcalma hizina gore
-#    degisir (hizli daliste 12 m, yavasta 8 m). Irtifa tabani ise
-#    DETERMINISTIK - bilinmeyen bir limite karsi ongorulebilir olmak sart.
+# WHY AN ALTITUDE AND NOT A DURATION:
+#    The binding constraint is an ALTITUDE. The rulebook (p.29) says the
+#    minimum and maximum flight altitudes will be announced to the teams - so
+#    they are NOT KNOWN YET. It also says (p.21) that dropping below the
+#    flight altitude limit during a kamikaze run counts as leaving the
+#    permitted area. The altitude cost of "keep going for 0.3 s" varies with
+#    descent rate (12 m in a fast dive, 8 m in a slow one), whereas an
+#    altitude floor is DETERMINISTIC - and being predictable against an
+#    unknown limit is exactly what matters.
 #
-# 35 m secildi:
-#    QR cozulebilir ~46 m -> devam araligi 11 m -> 11/32 = 0.34 s
-#    -> ~10 gecerli kare (30 FPS), QR 70 -> ~86 px
-#    pull-up komutu 35 m, olculen irtifa kaybi 13-16 m -> en dusuk ~20 m
+# 35 m was chosen:
+#    decodable from ~46 m -> 11 m of continued descent -> 11/32 = 0.34 s
+#    -> ~10 valid frames (30 FPS), QR grows from 70 to ~86 px
+#    pull-up commanded at 35 m, measured altitude loss 13-16 m -> bottom ~20 m
 #
-# ⚠️ DIVE_PULL_UP_ALTITUDE_M'den (30) BUYUK OLMALI. Kucuk olsaydi taban
-#    once tetiklenir ve bu ayar hicbir ise yaramazdi - sessizce.
-#    tests/test_gps_gudum.py bu sirayi kilitliyor.
+# ⚠️ THIS MUST STAY ABOVE DIVE_PULL_UP_ALTITUDE_M (30). If it were lower the
+#    floor would fire first and this setting would do nothing at all - and it
+#    would do nothing silently. tests/test_gps_gudum.py locks the ordering.
 KAMIKAZE_QR_CONTINUE_ALTITUDE_M: float = 35.0
 
 
 # ==========================================
-# DALISTA GPS TABANLI YANAL GUDUM
+# GPS-BASED LATERAL GUIDANCE DURING THE DIVE
 # ==========================================
-# ⚠️ OLCULEN SORUN (2026-08-05): dalis hedefi 42.5 m ISKALIYORDU.
-#    En dusuk noktada ucak 47.3978195/8.5533166, QR pad 47.3979711/8.5527992.
-#    QR pad 2x2 m -> sapma kenarin 21 KATI. 4879 karede 0 QR tespiti;
-#    cunku pad kadraja HIC girmiyor, karede yalnizca cimen var.
+# ⚠️ MEASURED PROBLEM (2026-08-05): the dive MISSED the target by 42.5 m.
+#    At its lowest point the aircraft was at 47.3978195/8.5533166 while the
+#    QR pad sits at 47.3979711/8.5527992. The pad is 2x2 m, so the miss was
+#    21 TIMES its edge length. 4879 frames produced zero QR detections,
+#    because the pad never entered the frame at all - every frame was grass.
 #
-# SEBEP: dalis SABIT ATTITUDE tutuyordu (DIVE_PITCH_DEG, DIVE_ROLL_DEG=0).
-#    Hedefe dogru yanal duzeltme yoktu. Faz 0'da eklenen gorsel merkezleme
-#    (KAMIKAZE_QR_CENTERING) duzeltir AMA once QR'i GORMESI gerekir.
-#    Tavuk-yumurta: QR'i gormek icin isabetli olmak, isabetli olmak icin
-#    QR'i gormek gerekiyordu.
+# CAUSE: the dive held a FIXED ATTITUDE (DIVE_PITCH_DEG, DIVE_ROLL_DEG=0).
+#    There was no lateral correction toward the target. The visual centering
+#    added earlier (KAMIKAZE_QR_CENTERING) does correct it, but only once it
+#    can SEE the QR. Chicken and egg: seeing the QR required being accurate,
+#    and being accurate required seeing the QR.
 #
-# COZUM: uc katmanli oncelik.
-#    1) QR gorunuyorsa  -> gorsel merkezleme (en hassas, hedefi dogrudan gorur)
-#    2) QR yoksa        -> GPS yanal gudum (kerteriz farki -> roll)
-#    3) Telemetri yoksa -> kor dalis (eski davranis)
+# SOLUTION: three layers, in priority order.
+#    1) QR visible      -> visual centering (most precise, sees the target)
+#    2) no QR           -> GPS lateral guidance (bearing error -> roll)
+#    3) no telemetry    -> blind dive (the old behaviour)
 KAMIKAZE_GPS_GUIDANCE: bool = True
 
-# Kerteriz hatasi (derece) -> roll komutu kazanci.
-# 1 derece kerteriz hatasi kac derece roll uretsin?
+# Bearing error (degrees) -> roll command gain.
+# How many degrees of roll should one degree of bearing error produce?
 KAMIKAZE_GPS_ROLL_GAIN: float = 1.5
 
-# ⚠️ SINIR, gorsel merkezlemeninkinden (15) GENIS ama yine de dar tutuldu.
-#    Neden genis: GPS gudumu dalisin BASINDA devreye girer ve kisa surede
-#    onemli bir yanal hatayi kapatmasi gerekir. 120 m'den 30 m'ye dalis
-#    ~2.8 s suruyor; 40 m'lik bir sapmayi kapatmak icin ciddi yanal
-#    ivme gerekir.
-#    Neden yine de dar: dalis gorevin en riskli fazi, asiri yatis hem
-#    kadraji dondurur hem yapisal yuk bindirir.
+# ⚠️ This limit is WIDER than the visual centering one (15), but still tight.
+#    Why wider: GPS guidance engages at the START of the dive and has to close
+#    a meaningful lateral error quickly. The dive from 120 m to 30 m takes
+#    about 2.8 s; closing a 40 m offset in that time needs real lateral
+#    acceleration.
+#    Why still tight: the dive is the riskiest phase of the mission, and
+#    excessive bank both rotates the frame and loads the airframe.
 KAMIKAZE_GPS_MAX_ROLL_DEG: float = 25.0
 
-# ⚠️ Hedefe bu mesafeden yakinsa kerteriz hesabi ANLAMSIZLASIR: birkac
-#    metre kala kucucuk bir konum hatasi kerteriz'i 180 derece cevirebilir
-#    ve ucak son anda sertce yatar. Bu mesafenin altinda roll DONDURULUR.
+# ⚠️ Closer to the target than this, the bearing calculation STOPS MEANING
+#    ANYTHING: within a few metres a tiny position error can swing the bearing
+#    by 180 degrees and make the aircraft bank hard at the last moment. Below
+#    this distance the roll command is FROZEN.
 KAMIKAZE_GPS_MIN_DISTANCE_M: float = 25.0
 
 # ==========================================
-# PURSUIT (TAKİP/YAKLAŞMA) STATE AYARLARI
+# PURSUIT STATE SETTINGS
 # ==========================================
 #
-# ⚠️ BU BLOK ESKİDEN İKİ KEZ TANIMLIYDI (taban koddan miras, ilk sürüm).
-#    Python'da aynı isme ikinci kez atama yapılırsa SON atama kazanır — yani
-#    üstteki blok TAMAMEN ÖLÜYDÜ. Oradaki bir değeri ayarlayan kişi hiçbir
-#    etki görmezdi ve bunu hiçbir test yakalamazdı (ikisi de geçerli Python).
+# ⚠️ THIS BLOCK USED TO BE DEFINED TWICE (inherited from the base code).
+#    In Python, assigning the same name twice means the LAST assignment wins -
+#    so the upper block was COMPLETELY DEAD. Anyone tuning a value there would
+#    have seen no effect whatsoever, and no test would have caught it, because
+#    both blocks are perfectly valid Python.
 #
-#      sabit                     ölü blok     yürürlükteki
+#      constant                  dead block   in effect
 #      PURSUIT_THROTTLE           0.8            0.65
-#      PURSUIT_BASE_PITCH_DEG    -5.0           +2.0    ← İŞARET DÖNÜYOR
-#      PURSUIT_PITCH_GAIN         0.1            0.5     ← 5 kat
+#      PURSUIT_BASE_PITCH_DEG    -5.0           +2.0    <- SIGN FLIPS
+#      PURSUIT_PITCH_GAIN         0.1            0.5     <- 5x
 #      PURSUIT_MAX_ROLL_DEG      35.0           45.0
 #      PURSUIT_MIN_PITCH_DEG    -20.0          -15.0
 #      PURSUIT_MAX_PITCH_DEG     15.0           20.0
 #
-#    Silinen ÜSTTEKİ (ölü) bloktu; aşağıdaki değerler zaten uçan değerlerdi,
-#    yani bu temizlik davranışı DEĞİŞTİRMEZ.
-#    ⚠️ Ölü blok PURSUIT_MIN_ROLL_DEG'i tanımlamıyordu ama pursuit_state.py
-#       onu kullanıyor → yanlış bloğu silmek PURSUIT'i AttributeError ile
-#       düşürürdü. Doğrulandı: silmeden önce iki blok da okundu.
+#    The UPPER (dead) block is the one that was deleted; the values below were
+#    already the ones flying, so this cleanup does NOT change behaviour.
+#    ⚠️ The dead block did not define PURSUIT_MIN_ROLL_DEG, but
+#       pursuit_state.py uses it - so deleting the wrong block would have
+#       brought PURSUIT down with an AttributeError. Verified: both blocks
+#       were read before either was removed.
 
-# --- Gaz (Throttle) Ayarı ---
-# 0.0 ile 1.0 arasında bir değer.
-# Sabit kanadın stall (perdövites) olmaması ve hedefi yakalaması için gereken seyir gazı.
+# --- Throttle ---
+# A value between 0.0 and 1.0.
+# Cruise throttle: enough to catch the target without stalling a fixed wing.
 PURSUIT_THROTTLE = 0.65
 
-# --- Roll (Yatış/Sağ-Sol) Ayarları ---
-# Uçağın hedefe dönmek için ne kadar agresif yatacağını belirler.
-# Kazanç = yaw hatası → roll dönüşümü: 1° yaw hatası kaç derece roll üretsin?
-# 1.0 başlangıç için iyidir; dönüş yavaş kalıyorsa artır, titreme yapıyorsa azalt.
-PURSUIT_ROLL_GAIN = 1.0        # Açı farkı çarpanı
-PURSUIT_MIN_ROLL_DEG = -45.0   # Maksimum sola yatış sınırı (derece)
-PURSUIT_MAX_ROLL_DEG = 45.0    # Maksimum sağa yatış sınırı (derece)
+# --- Roll ---
+# How aggressively the aircraft banks to turn toward the target.
+# Gain = yaw error -> roll: how many degrees of roll per degree of yaw error?
+# 1.0 is a good starting point; raise it if the turn is sluggish, lower it if
+# the aircraft oscillates.
+PURSUIT_ROLL_GAIN = 1.0        # angle error multiplier
+PURSUIT_MIN_ROLL_DEG = -45.0   # maximum bank to the left (degrees)
+PURSUIT_MAX_ROLL_DEG = 45.0    # maximum bank to the right (degrees)
 
-# --- Pitch (Yunuslama/İrtifa) Ayarları ---
-# Uçağın irtifasını sabit tutması için gereken burun aşağı/yukarı limitleri.
-# Kazanç = irtifa hatası → pitch dönüşümü: 10 m fark kaç derece pitch üretsin?
-# 0 yapılırsa irtifa takibi tamamen kapanır, sadece yatay yaklaşım kalır.
-PURSUIT_BASE_PITCH_DEG = 2.0   # İrtifa kaybetmeden düz uçmak için standart trim açısı
-PURSUIT_PITCH_GAIN = 0.5       # İrtifa hatası çarpanı (toparlayamıyorsa hafifçe artır)
-PURSUIT_MIN_PITCH_DEG = -15.0  # Maksimum dalış açısı (çok eksi yapma, hız patlaması olur)
-PURSUIT_MAX_PITCH_DEG = 20.0   # Maksimum tırmanış açısı (çok artı yapma, uçak stall olur)
+# --- Pitch ---
+# Nose up/down limits used to hold altitude.
+# Gain = altitude error -> pitch: how many degrees of pitch per 10 m of error?
+# Setting it to 0 disables altitude tracking entirely, leaving a purely
+# lateral approach.
+PURSUIT_BASE_PITCH_DEG = 2.0   # trim angle for level flight without losing altitude
+PURSUIT_PITCH_GAIN = 0.5       # altitude error multiplier (raise slightly if it lags)
+PURSUIT_MIN_PITCH_DEG = -15.0  # steepest descent (too negative and speed runs away)
+PURSUIT_MAX_PITCH_DEG = 20.0   # steepest climb (too positive and the aircraft stalls)
