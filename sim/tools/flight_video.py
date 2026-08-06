@@ -56,7 +56,7 @@ REPORT = "/tmp/frame_report.txt"
 
 class Recorder(Node):
     def __init__(self):
-        super().__init__("ucus_videosu")
+        super().__init__("flight_video")
         self.bridge = CvBridge()
         self.writer = None
         self.n = 0
@@ -65,7 +65,13 @@ class Recorder(Node):
         self.t0 = time.monotonic()
         self._overlay = _OverlayShim()
         self.report = open(REPORT, "w")
-        self.report.write("frame,t,decode,text,in_av,qr_px\n")
+        # ex/ey: where the target sat in the frame, normalised so that 0 is
+        # dead centre and +-1 is the frame edge -- the SAME convention
+        # perception.py publishes as "error" and dive_state.py steers on. The
+        # centre was already being computed here and then thrown away; without
+        # it the report can say the QR decoded but not whether the aircraft
+        # actually came down on top of it.
+        self.report.write("frame,t,decode,text,in_av,qr_px,ex,ey\n")
         self.create_subscription(Image, "/camera", self._frame, 1)
         print("listening on /camera  ->  %s" % MP4, flush=True)
 
@@ -81,6 +87,7 @@ class Recorder(Node):
 
         # --- Decode at FULL resolution ---
         text, in_av, qr_px = "", False, 0
+        ex, ey = 0.0, 0.0
         found = zbar_decode(frame)
         if found:
             b = found[0]
@@ -99,6 +106,8 @@ class Recorder(Node):
                          and (x + bw) <= ax2 and (y + bh) <= ay2)
                 cx, cy = x + bw / 2.0, y + bh / 2.0
                 source = "box"
+            ex = (cx - w / 2.0) / (w / 2.0)
+            ey = (cy - h / 2.0) / (h / 2.0)
             if in_av:
                 self.in_av += 1
             color = (0, 255, 0) if in_av else (0, 165, 255)
@@ -114,8 +123,9 @@ class Recorder(Node):
                     (20, 40), cv2.FONT_HERSHEY_SIMPLEX, 0.8,
                     (230, 230, 230), 2)
 
-        self.report.write("%d,%.3f,%d,%s,%d,%d\n" % (
-            self.n, t, 1 if text else 0, text, 1 if in_av else 0, qr_px))
+        self.report.write("%d,%.3f,%d,%s,%d,%d,%+.4f,%+.4f\n" % (
+            self.n, t, 1 if text else 0, text, 1 if in_av else 0, qr_px,
+            ex, ey))
 
         small = cv2.resize(frame, None, fx=VIDEO_SCALE, fy=VIDEO_SCALE)
         if self.writer is None:
