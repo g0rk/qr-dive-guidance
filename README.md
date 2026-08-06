@@ -258,8 +258,10 @@ explaining how that bug happened:
 - The target-area margins (25 % horizontal, 10 % vertical) were read off a
   figure, not from text.
 - No air-to-air tracking, no no-fly-zone avoidance, no ground-station client.
-- Comments are being migrated to English; the older modules are still in
-  Turkish.
+- `sim/tools/measure_alt.py` subscribes to `/cam60` … `/cam20`, but nothing in
+  this repository generates a world with those cameras. The decode-threshold
+  measurement it reports was taken with a multi-camera world that was never
+  committed, so reproducing that table means building the world by hand.
 
 ## Licence
 
