@@ -17,7 +17,7 @@ from states.base_state import BaseState
 #         name 'config' is not defined"
 #    so the aircraft simply never took off, silently. The regression came in
 #    when _target_alt_m moved from a literal into config and the import was
-#    not added with it. tests/test_durum_kurulumu.py now locks this down by
+#    not added with it. tests/test_state_construction.py now locks this down by
 #    instantiating every state.
 import config
 

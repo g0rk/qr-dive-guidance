@@ -121,7 +121,7 @@ TARGET_LONGITUDE_DEG = 8.5527992
 ```
 
 Verified: 500.0 m at a bearing of 90.0° from the world origin. This is not
-left to trust — `tests/test_hedef_koordinati.py` reads the world SDF and
+left to trust — `tests/test_target_coordinate.py` reads the world SDF and
 re-derives both numbers, so the world and the config cannot drift apart in
 silence.
 

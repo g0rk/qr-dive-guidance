@@ -2,7 +2,7 @@
 """Record the camera feed to MP4 for a whole flight, running the REAL
 perception code on every frame.
 
-    python3 sim/tools/ucus_videosu.py [seconds]
+    python3 sim/tools/flight_video.py [seconds]
 
 IT DOES TWO JOBS:
   1. DIAGNOSIS - does the QR enter the frame, does it decode when it does,

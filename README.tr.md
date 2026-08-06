@@ -189,8 +189,8 @@ başlatıp `PX4_GZ_STANDALONE=1` ile px4'ü çalıştırmak gerekiyor. Gözle
 izlemek için:
 
 ```bash
-bash sim/tools/izle.sh
-python3 sim/tools/komut.py takeoff
+bash sim/tools/watch.sh
+python3 sim/tools/command.py takeoff
 ```
 
 ### Araçlar
@@ -198,8 +198,8 @@ python3 sim/tools/komut.py takeoff
 | | Ne yapar |
 |---|---|
 | `sim/tools/cam_params.py` | Kamera parametrelerinin **tek kaynağı** — `model.sdf`'ten okur |
-| `sim/tools/ucus_videosu.py` | Uçuşu MP4'e alır + **her karede tam çözünürlükte** decode raporu |
-| `sim/tools/irtifa_limiti.py` | "X metrenin altında kesintisiz kaç saniye kalındı" |
+| `sim/tools/flight_video.py` | Uçuşu MP4'e alır + **her karede tam çözünürlükte** decode raporu |
+| `sim/tools/altitude_limit.py` | "X metrenin altında kesintisiz kaç saniye kalındı" |
 | `sim/tools/measure_alt.py` | İrtifaya göre decode eşiği ölçümü |
 | `sim/tools/build_world.py` | Dünya üretici (XML ağacıyla — regex ile **değil**) |
 
@@ -225,13 +225,13 @@ python3 -m pytest tests/ -q     # 27 fonksiyon / 97 alt-kontrol
 Testlerin çoğu **gerçek bir hatadan sonra** yazıldı ve o hatanın nasıl
 oluştuğu testin başında anlatılıyor:
 
-- `test_hedef_koordinati.py` — hedef koordinatı sayıları elle yazmıyor,
+- `test_target_coordinate.py` — hedef koordinatı sayıları elle yazmıyor,
   **dünya SDF'inden yeniden türetiyor**. Hedef bir ara pad'in 49.9 m
   güneybatısını gösteriyordu (iki farklı "home" karıştırılmıştı).
-- `test_durum_kurulumu.py` — her FSM durumunu **kuruyor**. `takeoff_state.py`
+- `test_state_construction.py` — her FSM durumunu **kuruyor**. `takeoff_state.py`
   bir ara `import config` içermiyordu; uçak hiçbir koşulda kalkamıyordu ve
   bu yalnızca bir *uyarı* olarak loglanıyordu.
-- `test_gps_gudum.py` — dalıştaki yanal düzeltmenin **işaret yönünü**
+- `test_gps_guidance.py` — dalıştaki yanal düzeltmenin **işaret yönünü**
   kilitler. Yanlış yöne yatan bir düzeltme sapmayı kapatmaz, büyütür.
 
 > `check()` fonksiyonu bir ara `assert` etmiyordu — ekranda `KALDI` yazan

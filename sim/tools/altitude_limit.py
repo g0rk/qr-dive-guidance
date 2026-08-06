@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
 """From a flight log, report how many seconds were spent below a given altitude.
 
-    python3 sim/tools/irtifa_limiti.py [flight.csv]
+    python3 sim/tools/altitude_limit.py [flight.csv]
 
 WHY THIS EXISTS
 ---------------

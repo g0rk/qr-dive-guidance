@@ -1,7 +1,7 @@
 #!/usr/bin/env bash
 # One command to WATCH the simulation.
 #
-#     bash sim/tools/izle.sh
+#     bash sim/tools/watch.sh
 #
 # Two windows open (straight onto the Windows desktop, thanks to WSLg):
 #   1. the gz sim GUI  - the 3D world, the aircraft, the QR pad
@@ -74,12 +74,12 @@ sleep 4
 echo
 echo "======================================================================"
 echo "  READY. Send the commands to start the mission:"
-echo "     python3 sim/tools/komut.py takeoff"
+echo "     python3 sim/tools/command.py takeoff"
 echo "     ... once it reaches HOLD ..."
-echo "     python3 sim/tools/komut.py align"
+echo "     python3 sim/tools/command.py align"
 echo
 echo "  To also record the camera feed to MP4:"
-echo "     python3 sim/tools/ucus_videosu.py 240"
+echo "     python3 sim/tools/flight_video.py 240"
 echo
 echo "  Logs: /tmp/mission.log  /tmp/px4_sitl.log  /tmp/gz_sim.log"
 echo "======================================================================"

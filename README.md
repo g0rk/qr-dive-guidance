@@ -195,8 +195,8 @@ python3 server_time.py
 separately and run px4 with `PX4_GZ_STANDALONE=1`. To watch it:
 
 ```bash
-bash sim/tools/izle.sh
-python3 sim/tools/komut.py takeoff     # then: komut.py align
+bash sim/tools/watch.sh
+python3 sim/tools/command.py takeoff     # then: command.py align
 ```
 
 ### Tools
@@ -204,8 +204,8 @@ python3 sim/tools/komut.py takeoff     # then: komut.py align
 | | |
 |---|---|
 | `sim/tools/cam_params.py` | Single source of camera parameters — reads the model |
-| `sim/tools/ucus_videosu.py` | Records the flight and decodes **every frame at full resolution** |
-| `sim/tools/irtifa_limiti.py` | Continuous seconds spent below a given altitude |
+| `sim/tools/flight_video.py` | Records the flight and decodes **every frame at full resolution** |
+| `sim/tools/altitude_limit.py` | Continuous seconds spent below a given altitude |
 | `sim/tools/measure_alt.py` | Decode threshold against altitude |
 | `sim/tools/hud_preview.py` | Renders synthetic tilted targets to check the overlay |
 | `sim/tools/make_gif.py` | Cuts the dive out of a recording as a GIF |
@@ -234,20 +234,20 @@ python3 -m pytest tests/ -q      # 39 functions / 132 checks
 Most tests were written **after a real bug**, and each one opens by
 explaining how that bug happened:
 
-- `test_hedef_koordinati.py` — the target coordinate is not hard-coded, it is
+- `test_target_coordinate.py` — the target coordinate is not hard-coded, it is
   re-derived from the world file. It once pointed 49.9 m southwest of the
   pad because two different "home" origins had been conflated.
-- `test_durum_kurulumu.py` — instantiates every state machine state. One
+- `test_state_construction.py` — instantiates every state machine state. One
   state was missing an import; the aircraft could not take off under any
   circumstances, and the failure surfaced only as a warning line.
-- `test_gps_gudum.py` — locks the *sign* of the lateral dive correction. A
+- `test_gps_guidance.py` — locks the *sign* of the lateral dive correction. A
   correction that banks the wrong way does not close the offset, it widens
   it.
 - `test_dive_geometry.py` — loads the portable module in a separate process
   and asserts it pulled in **no** project or heavy dependencies.
 
 > The `check()` helper did not `assert` for a while. Sub-checks printed
-> `KALDI` on screen while pytest reported green. Fixed.
+> `FAIL` on screen while pytest reported green. Fixed.
 
 ---
 

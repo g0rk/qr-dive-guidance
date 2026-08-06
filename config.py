@@ -52,7 +52,7 @@ AUTO_START = True
 #    The QR pad is 2 m x 2 m, so a 49.9 m error is 25 TIMES its edge length.
 #    The aircraft dived at empty grass.
 #
-#    The fix is locked down by tests/test_hedef_koordinati.py: the test reads
+#    The fix is locked down by tests/test_target_coordinate.py: the test reads
 #    the world SDF and re-derives both numbers. If the world moves, the test
 #    fails - the two cannot drift apart silently.
 #
@@ -326,7 +326,7 @@ KAMIKAZE_PULLUP_ON_QR: bool = True
 # ==========================================
 # ⚠️ MEASURED PROBLEM: pulling up on the first valid detection collected
 #    exactly ONE decodable frame per flight. An independent counter that
-#    decodes every frame at full resolution (sim/tools/ucus_videosu.py) found
+#    decodes every frame at full resolution (sim/tools/flight_video.py) found
 #    1 detection in 3687 frames, and in that frame the QR was 70 pixels wide -
 #    right ON the measured decode threshold (4/4 at 40 m / 70 px, 0/4 at
 #    50 m). One frame satisfies the requirement, so the run passes - with zero
@@ -359,7 +359,7 @@ KAMIKAZE_PULLUP_ON_QR: bool = True
 #
 # ⚠️ THIS MUST STAY ABOVE DIVE_PULL_UP_ALTITUDE_M (30). If it were lower the
 #    floor would fire first and this setting would do nothing at all - and it
-#    would do nothing silently. tests/test_gps_gudum.py locks the ordering.
+#    would do nothing silently. tests/test_gps_guidance.py locks the ordering.
 KAMIKAZE_QR_CONTINUE_ALTITUDE_M: float = 35.0
 
 

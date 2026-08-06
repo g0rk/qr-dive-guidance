@@ -99,7 +99,7 @@ def main(src, dst):
     #    measured against the V1 texture.
     #    The corrected model had been built earlier but was NEVER WIRED INTO
     #    THE WORLD; that is why the camera flight produced 0 QR detections.
-    #    The <name> stays "qr_pad": tests/test_hedef_koordinati.py looks the
+    #    The <name> stays "qr_pad": tests/test_target_coordinate.py looks the
     #    pad up by that name to verify the config target.
     world.append(frag("""
     <include>

@@ -104,7 +104,7 @@ def quad_in_av(corners, av_x1, av_y1, av_x2, av_y2) -> bool:
     ⚠️ HONEST NOTE - THIS FUNCTION CHANGES NO DECISION.
        An earlier version of this work argued that "a valid hit can be
        rejected because the box is up to 2x larger than the QR". That was
-       WRONG, and measurement refuted it (tests/test_faz2_center.py, 41
+       WRONG, and measurement refuted it (tests/test_center.py, 41
        positions and angles, zero disagreement).
 
        The reason: the target area is an AXIS-ALIGNED rectangle. A convex

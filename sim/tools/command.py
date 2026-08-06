@@ -1,10 +1,10 @@
 #!/usr/bin/env python3
 """Send a mission command by hand - stands in for the ground station.
 
-    python3 sim/tools/komut.py takeoff
-    python3 sim/tools/komut.py align
-    python3 sim/tools/komut.py hold
-    python3 sim/tools/komut.py abort
+    python3 sim/tools/command.py takeoff
+    python3 sim/tools/command.py align
+    python3 sim/tools/command.py hold
+    python3 sim/tools/command.py abort
 
 WHY IT IS NEEDED: main.py starts the FSM loop under AUTO_START, but the
 initial state is IdleState and its update() is `pass` -- so IDLE is a
