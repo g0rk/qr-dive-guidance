@@ -14,13 +14,29 @@ W, H = 1920, 1080
 
 
 def qr_tile(px=420):
-    # mask_pattern is pinned. The library picks a mask from the payload, and
-    # the mask decides how well the pattern survives downscaling and the
-    # perspective warp below. Measured over a 0-90 deg sweep: mask 1 decodes
-    # at every angle, the auto-picked mask does not. It must also match the
-    # world texture in sim/models/qr_pad_v1 - one source of truth, not two.
+    # mask_pattern is pinned, and the value was chosen by measurement in
+    # Gazebo - not by this synthetic scene.
+    #
+    # The library picks a mask from the payload. The mask changes the black
+    # and white pattern completely, and at the decode threshold - where a
+    # module is about two pixels wide - the pattern decides whether the code
+    # survives at all. Mask 1 was picked first, from this synthetic scene
+    # alone: it decodes at every angle of a 0-90 deg sweep. That was the
+    # wrong yardstick. Measured against the real gz render, 5 frames per
+    # altitude, 55 deg look-down:
+    #
+    #     altitude      45 m   40 m   35 m   30 m
+    #     mask 1        0/5    0/5    5/5    5/5
+    #     mask 6        0/5    5/5    5/5    5/5     <- 69 px at 40 m
+    #
+    # Mask 6 buys a whole 5 m of decode altitude, which is what the trigger
+    # distance in config.py is derived from. It also passes the 0-90 deg
+    # sweep, so the preview images below still render.
+    #
+    # This must match the world texture in sim/models/qr_pad_v1 - one source
+    # of truth, not two.
     q = qrcode.QRCode(version=1, error_correction=qrcode.constants.ERROR_CORRECT_M,
-                      box_size=10, border=2, mask_pattern=1)
+                      box_size=10, border=2, mask_pattern=6)
     q.add_data("dive_pad"); q.make(fit=False)
     a = cv2.cvtColor(np.array(q.make_image(fill_color="black",
                                            back_color="white").convert("RGB")),
