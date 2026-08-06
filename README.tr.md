@@ -8,9 +8,10 @@ ve onu doğrulayan PX4 + Gazebo simülasyon ortamı.
 
 ![Hedefe dalış](docs/dive.gif)
 
-*Gerçek simülasyon uçuşu. Hedef kadraja giriyor, uçak yaklaştıkça merkeze
-oturuyor ve okunuyor — 9 okunabilir kare, 8'i tamamen Hedef Vuruş Alanı'nın
-içinde.*
+*Gerçek simülasyon uçuşu, kurgu yok. Hedef kadraja giriyor, uçak yaklaştıkça
+merkeze doğru kayıyor ve okunuyor — 8 okunabilir kare, 7'si tamamen Hedef
+Vuruş Alanı'nın içinde. Animasyon o yedincide bir an duruyor: 32 m/s'de
+okunabilir pencerenin tamamı yarım saniye kadar sürüyor.*
 
 ---
 
@@ -136,8 +137,12 @@ agresif açı 9.2 px. 2.8 px = 0.075° = 30 m'den yerde 4 cm.
 
 ## Ölçümler
 
-**QR decode eşiği** (gz render'ı + gerçek algı kodu, V1 doku, 55° dalış,
-51.28° HFOV, 1920×1080):
+**QR decode eşiği** (gz render'ı + gerçek algı kodu, V1 doku, 55° bakış,
+51.28° HFOV, 1920×1080). Tek komutla yeniden üretilir:
+
+```bash
+bash sim/tools/measure_alt.sh
+```
 
 | İrtifa | Eğik menzil | Ölçülen px | Decode |
 |---|---|---|---|
@@ -145,15 +150,28 @@ agresif açı 9.2 px. 2.8 px = 0.075° = 30 m'den yerde 4 cm.
 | 50 m | 61.0 m | — | 0/4 |
 | **40 m** | 48.8 m | **70** | **4/4** ← eşik |
 | 30 m | 36.6 m | 93 | 4/4 |
-| 20 m | 24.4 m | 139 | 4/4 |
+| 25 m | 30.5 m | 112 | 4/4 |
+| 20 m | 24.4 m | 140 | 4/4 |
+
+Düzenek, bu irtifalara yerleştirilmiş ve her biri pad'e dalışın kendi bakış
+açısıyla nişanlanmış **altı sabit kamera** — kendi dünyasında
+(`sim/worlds/qr_measure.sdf`). Uçak yok: kameralar hareket etmediği için bu
+ölçüm yalnızca render'ı ve algı kodunu ölçer, uçuşun dağılımını değil.
 
 **Pull-up irtifa kaybı** (5 koşum): 14.93 / 15.55 / 15.84 / 16.17 / 16.46 m.
 Bu yüzden pull-up tabanı 20 m'den **30 m**'ye çıkarıldı — 20 m'de uçak
 2.87–4.00 m'ye kadar iniyordu, ki simülasyonda çarpmasa da gerçekte sıfır
 paydır.
 
-**Uçtan uca sonuç** (kamera zinciri açık, 5 koşum): QR **41.7–46.6 m**
-arasında okundu, **5/5 başarı**, hepsinde AV'nin tamamen içinde.
+**Uçtan uca sonuç** (kamera zinciri açık, 5 koşum, 2026-08-06): QR
+**38.1–44.1 m** arasında okundu, **5/5 başarı**, hepsinde AV'nin tamamen
+içinde.
+
+Koşumlar arası dağılım gerçek ve tek bir beşliğin gösterebileceğinden geniş.
+Daha önceki bir beşli 41.7–46.6 m vermişti, bu beşli 38.1–44.1 m. İkisi
+örtüşüyor, örneklem küçük ve arada doku değişti — yani bu bir eğilim değil,
+saçılma. Ama 38.1 m kayıtlardaki **en kötü** gözlem ve
+`config.QR_FIRST_DETECT_ALTITUDE_M` ondan alınıyor.
 
 ---
 
@@ -173,8 +191,12 @@ irtifa maliyeti hıza göre değişir.
 
 | | Önce | Sonra |
 |---|---|---|
-| Geçerli kare | 1 | **12** |
+| Geçerli kare | 1 | **5 – 10** |
 | En düşük irtifa | ~29.7 m | 19.05 / 19.08 m |
+
+Burada bir ara "12" yazıyordu; o tek bir iyi uçuştu. Beş koşum
+5 / 7 / 10 / 10 / 10 veriyor. En kötüsü bile gerekenin beş katı — kurulabilecek
+dürüst iddia bu.
 
 ---
 
@@ -200,8 +222,11 @@ python3 sim/tools/command.py takeoff
 | `sim/tools/cam_params.py` | Kamera parametrelerinin **tek kaynağı** — `model.sdf`'ten okur |
 | `sim/tools/flight_video.py` | Uçuşu MP4'e alır + **her karede tam çözünürlükte** decode raporu |
 | `sim/tools/altitude_limit.py` | "X metrenin altında kesintisiz kaç saniye kalındı" |
-| `sim/tools/measure_alt.py` | İrtifaya göre decode eşiği ölçümü |
-| `sim/tools/build_world.py` | Dünya üretici (XML ağacıyla — regex ile **değil**) |
+| `sim/tools/measure_alt.sh` | Yukarıdaki decode eşiği tablosu için **tek komut** |
+| `sim/tools/measure_alt.py` | İrtifaya göre decode eşiği (düzeneği dünyadan okur) |
+| `sim/tools/hud_preview.py` | Sentetik eğik hedefler üretip overlay'i sınar |
+| `sim/tools/make_gif.py` | Kayıttan dalış anını GIF olarak keser |
+| `sim/tools/build_world.py` | Dünya üretici (XML ağacıyla — regex ile **değil**); `--measure` kamera düzeneğini kurar |
 
 ### Kamera
 
@@ -234,7 +259,7 @@ oluştuğu testin başında anlatılıyor:
 - `test_gps_guidance.py` — dalıştaki yanal düzeltmenin **işaret yönünü**
   kilitler. Yanlış yöne yatan bir düzeltme sapmayı kapatmaz, büyütür.
 
-> `check()` fonksiyonu bir ara `assert` etmiyordu — ekranda `KALDI` yazan
+> `check()` fonksiyonu bir ara `assert` etmiyordu — ekranda `FAIL` yazan
 > kontrol varken pytest yeşil kalıyordu. Düzeltildi.
 
 ---
@@ -250,6 +275,9 @@ oluştuğu testin başında anlatılıyor:
 - `LockEvaluator` (Savaşan görevi) ve NFZ kaçınma bu depoda yok.
 - AV yüzdeleri (%25 yatay / %10 dikey) şartname **metninde geçmiyor**,
   yalnızca şekillerde; değer şeklin görüntüsünden ölçüldü.
+- Uçtan uca sayılar beşer koşumdan geliyor. Beş koşum, dağılımın *var
+  olduğunu* ve kabaca ne kadar geniş olduğunu gösterir; hiçbirine güven
+  aralığı koymaya yetmez.
 
 ---
 

@@ -7,9 +7,11 @@ ground QR target — plus the PX4 + Gazebo environment used to measure it.
 
 ![Dive onto the target](docs/dive.gif)
 
-*Real simulated flight. The target enters frame, drifts to centre as the
-aircraft closes, and is decoded — 9 readable frames, 8 of them fully inside
-the target area.*
+*Real simulated flight, nothing staged. The target enters frame, drifts
+toward centre as the aircraft closes, and is decoded — 8 readable frames, 7 of
+them fully inside the target area. The animation freezes for a moment on the
+last of those seven, because at 32 m/s the whole readable window lasts about
+half a second.*
 
 ---
 
@@ -118,7 +120,11 @@ but wrong pose.
 ## Measurements
 
 **Decode threshold** (Gazebo render, real perception code, V1 texture,
-55° dive, 51.28° HFOV, 1920×1080):
+55° look-down, 51.28° HFOV, 1920×1080). Reproduce it with one command:
+
+```bash
+bash sim/tools/measure_alt.sh
+```
 
 | Altitude | Slant range | Measured px | Decode |
 |---|---|---|---|
@@ -126,15 +132,27 @@ but wrong pose.
 | 50 m | 61.0 m | — | 0/4 |
 | **40 m** | 48.8 m | **70** | **4/4** ← threshold |
 | 30 m | 36.6 m | 93 | 4/4 |
-| 20 m | 24.4 m | 139 | 4/4 |
+| 25 m | 30.5 m | 112 | 4/4 |
+| 20 m | 24.4 m | 140 | 4/4 |
+
+The rig is six static cameras at those altitudes, each boresighted on the pad
+down the dive's own look-down angle, in a world of their own
+(`sim/worlds/qr_measure.sdf`). No aircraft is involved: the cameras do not
+move, so this measures the render and the perception code and nothing else.
 
 **Pull-up altitude loss**, 5 runs: 14.93 / 15.55 / 15.84 / 16.17 / 16.46 m.
 The pull-up floor was therefore raised from 20 m to **30 m** — at 20 m the
 aircraft bottomed out at 2.87–4.00 m, which does not crash in simulation but
 is zero margin in reality.
 
-**End to end**, camera chain live, 5 runs: QR read at **41.7–46.6 m**,
-**5/5 success**, every one fully inside the target area.
+**End to end**, camera chain live, 5 runs (2026-08-06): QR read at
+**38.1–44.1 m**, **5/5 success**, every one fully inside the target area.
+
+The spread between runs is real and larger than one set of five can show.
+An earlier set of five gave 41.7–46.6 m; these gave 38.1–44.1 m. The two
+overlap, the samples are small, and the texture changed in between, so the
+difference is scatter rather than a trend — but 38.1 m is the worst
+observation on record and `config.QR_FIRST_DETECT_ALTITUDE_M` is set from it.
 
 ---
 
@@ -156,8 +174,12 @@ altitude cost of "keep going for 0.3 s" varies with descent rate.
 
 | | Before | After |
 |---|---|---|
-| Usable frames | 1 | **12** |
+| Usable frames | 1 | **5 – 10** |
 | Lowest altitude | ~29.7 m | 19.05 / 19.08 m |
+
+"12" appeared here once; it was a single good flight. Five runs give
+5 / 7 / 10 / 10 / 10. The worst is still five times what is required, and
+that is the claim worth making.
 
 ---
 
@@ -206,10 +228,11 @@ python3 sim/tools/command.py takeoff     # then: command.py align
 | `sim/tools/cam_params.py` | Single source of camera parameters — reads the model |
 | `sim/tools/flight_video.py` | Records the flight and decodes **every frame at full resolution** |
 | `sim/tools/altitude_limit.py` | Continuous seconds spent below a given altitude |
-| `sim/tools/measure_alt.py` | Decode threshold against altitude |
+| `sim/tools/measure_alt.sh` | **One command** for the decode-threshold table above |
+| `sim/tools/measure_alt.py` | Decode threshold against altitude (reads the rig out of the world) |
 | `sim/tools/hud_preview.py` | Renders synthetic tilted targets to check the overlay |
 | `sim/tools/make_gif.py` | Cuts the dive out of a recording as a GIF |
-| `sim/tools/build_world.py` | World generator (XML tree, **not** regex) |
+| `sim/tools/build_world.py` | World generator (XML tree, **not** regex); `--measure` builds the camera rig |
 
 ### Camera
 
@@ -258,15 +281,14 @@ explaining how that bug happened:
 - The target-area margins (25 % horizontal, 10 % vertical) were read off a
   figure, not from text.
 - No air-to-air tracking, no no-fly-zone avoidance, no ground-station client.
-- `sim/tools/measure_alt.py` subscribes to `/cam60` … `/cam20`, but nothing in
-  this repository generates a world with those cameras. The decode-threshold
-  measurement it reports was taken with a multi-camera world that was never
-  committed, so reproducing that table means building the world by hand.
+- The end-to-end numbers come from five runs each. Five is enough to show that
+  the spread exists and roughly how wide it is; it is not enough to put a
+  confidence interval on any of them.
 
 ## Licence
 
 See [LICENSE](LICENSE). The base flight-control skeleton came from a shared
 first version; the simulation environment, measurement tooling, dive
 geometry and guidance work in this repository were added afterwards. The
-commit history carries the reasoning for each step — those messages are in
-Turkish, but the same reasoning is repeated in the code comments.
+commit history carries the reasoning for each step, and the same reasoning
+is repeated in the code comments.
