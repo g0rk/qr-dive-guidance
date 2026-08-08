@@ -35,6 +35,14 @@ jobs:
           # reasons unrelated to this code.
           python-version: "3.10"
           cache: pip
+          # ⚠️ REQUIRED, and leaving it out is a hard failure, not a missed
+          #    cache. `cache: pip` only looks for **/requirements.txt or
+          #    **/pyproject.toml; this repo has neither, so the step died in
+          #    11 seconds with "No file ... matched to [**/requirements.txt
+          #    or **/pyproject.toml], make sure you have checked out the
+          #    target repository". That last hint is misleading - checkout
+          #    was fine, the filename simply is not one of the two it knows.
+          cache-dependency-path: requirements-test.txt
 
       # pyzbar is a wrapper. Without the system library the import succeeds
       # and the first decode fails at runtime, which is the worst possible
