@@ -338,5 +338,7 @@ Taban kod takım içi paylaşılan bir ilk sürümden türetilmiştir ve burada
 yazarlarının izniyle yayımlanmaktadır. Bu depodaki simülasyon ortamı, ölçüm
 altyapısı, dalış geometrisi ve güdüm çalışması sonradan eklenmiştir. İlk
 commit o iskeletin dokunulmamış hâlidir; ona karşı `git diff` almak hangi
-kısmın kime ait olduğunu birebir gösterir. Commit geçmişi her adımın
-gerekçesini taşır.
+kısmın kime ait olduğunu birebir gösterir. Her kararın gerekçesi **kodun
+içinde**, açıkladığı şeyin yanında duruyor: dalış sabitleri için `config.py`,
+kamera için `cam_params.py`, dünyalar için `build_world.py`, ve her testin
+açılış yorumunda o testi yazdıran hatanın kendisi.

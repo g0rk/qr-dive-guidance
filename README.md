@@ -342,5 +342,7 @@ first version and is published here with its authors' permission; the
 simulation environment, measurement tooling, dive geometry and guidance work
 in this repository were added afterwards. The very first commit is that
 skeleton on its own, untouched, so `git diff` against it shows exactly which
-part is which. The commit history carries the reasoning for each step, and
-the same reasoning is repeated in the code comments.
+part is which. The reasoning behind each decision lives in the code, next to
+the thing it explains — `config.py` for the dive constants, `cam_params.py`
+for the camera, `build_world.py` for the worlds, and the opening comment of
+each test for the bug that caused it to be written.
