@@ -334,6 +334,9 @@ test de yok.
 
 ## Kaynak
 
-Taban kod takım içi paylaşılan bir ilk sürümden türetilmiştir. Bu depodaki
-simülasyon ortamı, ölçüm altyapısı, dalış geometrisi ve güdüm çalışması
-sonradan eklenmiştir; commit geçmişi her adımın gerekçesini taşır.
+Taban kod takım içi paylaşılan bir ilk sürümden türetilmiştir ve burada
+yazarlarının izniyle yayımlanmaktadır. Bu depodaki simülasyon ortamı, ölçüm
+altyapısı, dalış geometrisi ve güdüm çalışması sonradan eklenmiştir. İlk
+commit o iskeletin dokunulmamış hâlidir; ona karşı `git diff` almak hangi
+kısmın kime ait olduğunu birebir gösterir. Commit geçmişi her adımın
+gerekçesini taşır.

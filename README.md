@@ -338,7 +338,9 @@ depends on it today, and nothing tests that it is off.
 ## Licence
 
 See [LICENSE](LICENSE). The base flight-control skeleton came from a shared
-first version; the simulation environment, measurement tooling, dive
-geometry and guidance work in this repository were added afterwards. The
-commit history carries the reasoning for each step, and the same reasoning
-is repeated in the code comments.
+first version and is published here with its authors' permission; the
+simulation environment, measurement tooling, dive geometry and guidance work
+in this repository were added afterwards. The very first commit is that
+skeleton on its own, untouched, so `git diff` against it shows exactly which
+part is which. The commit history carries the reasoning for each step, and
+the same reasoning is repeated in the code comments.
