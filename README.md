@@ -286,7 +286,7 @@ so the readout is cropped to 1920×1080, and the vertical FOV that matters is
 ## Tests
 
 ```bash
-python3 -m pytest tests/ -q      # 50 functions / 176 checks
+python3 -m pytest tests/ -q      # 54 functions / 194 checks
 ```
 
 Most tests were written **after a real bug**, and each one opens by
@@ -343,7 +343,11 @@ The reason this belongs at the top of the list rather than buried: `telemetry.py
 documents its own defaults as *"safe/invalid values so the safety checker will
 reject a TelemetryData that has never been updated"*. That sentence describes
 a defence that is switched off three files away. Nothing in the repository
-depends on it today, and nothing tests that it is off.
+depends on it today — and `tests/test_no_telemetry.py` now measures both
+halves of the gap: what the checker would say if it ran (including the
+altitude rejection that makes enabling it abort every takeoff), and that
+nothing in the tick loop consults it. Switching it on fails a test that
+explains why, instead of failing on the runway.
 
 - Everything has been validated in simulation. There is no real flight data,
   and the camera intrinsics come from a datasheet rather than a calibration.

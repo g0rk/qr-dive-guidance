@@ -275,7 +275,7 @@ hiçbir şey fark etmez.
 ## Testler
 
 ```bash
-python3 -m pytest tests/ -q     # 50 fonksiyon / 176 alt-kontrol
+python3 -m pytest tests/ -q     # 54 fonksiyon / 194 alt-kontrol
 ```
 
 Testlerin çoğu **gerçek bir hatadan sonra** yazıldı ve o hatanın nasıl
@@ -331,8 +331,11 @@ Bunun listenin başında durmasının sebebi: `telemetry.py` kendi
 varsayılanlarını *"emniyet denetleyicisi hiç güncellenmemiş bir
 TelemetryData'yı reddetsin diye güvenli/geçersiz değerler"* diye
 belgeliyor. Bu cümle, üç dosya ötede kapatılmış bir savunmayı anlatıyor.
-Bugün depoda ona bel bağlayan bir şey yok, ve kapalı olduğunu sınayan bir
-test de yok.
+Bugün depoda ona bel bağlayan bir şey yok — ve `tests/test_no_telemetry.py`
+artık açığın iki yarısını da ölçüyor: denetleyici çalışsaydı ne derdi (her
+kalkışta abort ettirecek olan irtifa reddi dahil), ve tick döngüsünde onu
+okuyan bir şey olmadığı. Yani biri onu açtığında pistte değil, nedenini
+anlatan bir testte düşer.
 
 - **Sunucu saati bağlı değil** (`SERVER_TIME_OFFSET_S = 0`). Şartname s.13:
   *"sunucu saati yazmayan ya da farklı bir saat yazan görüntüler
