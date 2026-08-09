@@ -188,6 +188,13 @@ QR_DECODE_ALTITUDE_M = 40.0
 #       By that same rule the worst now observed, 38.1, is what belongs here:
 #       keeping 41.7 in the face of a measured 38.1 would be the same mistake
 #       in the other direction.
+#
+#    ⚠️ RE-MEASURED ON 21 RUNS (2026-08-09) AND THE VALUE DID NOT MOVE.
+#       Sixteen further flights on this same build put first detection between
+#       38.1 and 44.2 m, median 41.5, standard deviation 1.81. Not one went
+#       below 38.1. So the figure picked from five samples survived four times
+#       as much evidence - which is the useful result here, more useful than a
+#       new number would have been: the conservative choice was not luck.
 QR_FIRST_DETECT_ALTITUDE_M = 38.1
 
 # ⚠️ THE DIVE'S ACHIEVED FLIGHT PATH ANGLE - not the commanded pitch.
