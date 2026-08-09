@@ -95,13 +95,25 @@ bounding box instead throws that away — and the box is a poor stand-in:
 
 | View | Box area ÷ quad area |
 |---|---|
-| Head-on | 1.11× |
-| 30° rotation | 1.86× |
+| Axis-aligned | 1.00× |
+| Dive perspective, no rotation | 1.02× |
+| 15° rotation | 1.50× |
+| 30° rotation | 1.87× |
 | **45° rotation** | **2.00×** |
 
-What inflates the box is **rotation**, not perspective. In the image above
-the thin grey rectangle is the old drawing; the green quadrilateral is the
-real target boundary.
+What inflates the box is **rotation**, not perspective: 55° of look-down on
+its own costs 2 %, while 45° of rotation doubles the area.
+
+> **This table was wrong here and right in `README.tr.md`.** It used to say
+> 1.11× head-on and 1.86× at 30°. Neither reproduces — `tests/test_corners.py`
+> renders these scenes and prints the ratios on every run, and it gives 1.00×
+> and 1.87×. The 45° figure, which is the one the argument actually rests on,
+> was correct. Two copies of one measurement drifted apart, which is this
+> project's most repeated mistake and the reason the numbers that matter are
+> derived in code rather than typed into prose.
+
+In the image above the thin grey rectangle is the old drawing; the green
+quadrilateral is the real target boundary.
 
 The overlay draws both diagonals (on a tilted target the two halves are
 visibly unequal — precisely the information the box destroys), labels the
@@ -274,7 +286,7 @@ so the readout is cropped to 1920×1080, and the vertical FOV that matters is
 ## Tests
 
 ```bash
-python3 -m pytest tests/ -q      # 43 functions / 147 checks
+python3 -m pytest tests/ -q      # 50 functions / 176 checks
 ```
 
 Most tests were written **after a real bug**, and each one opens by
@@ -285,7 +297,14 @@ explaining how that bug happened:
   pad because two different "home" origins had been conflated.
 - `test_state_construction.py` — instantiates every state machine state. One
   state was missing an import; the aircraft could not take off under any
-  circumstances, and the failure surfaced only as a warning line.
+  circumstances, and the failure surfaced only as a warning line. It used to
+  walk the command table, which reaches 6 of the 9 states and left out the
+  whole dive chain; it now walks the package.
+- `test_approach_state.py` — the state that decides *when* to dive. The one
+  test here written after a measurement rather than a bug: coverage put
+  `approach_state.py` at 0 %, never imported by the suite. It bisects the
+  distance at which the handover to `DIVE` actually happens and compares that
+  to the configured one, instead of asserting the constant back at itself.
 - `test_gps_guidance.py` — locks the *sign* of the lateral dive correction. A
   correction that banks the wrong way does not close the offset, it widens
   it.

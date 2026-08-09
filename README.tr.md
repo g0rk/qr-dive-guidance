@@ -119,12 +119,21 @@ sıkıştırmanın maliyeti ölçüldü:
 
 | | Kutunun şişmesi |
 |---|---|
-| Tam karşıdan | 1.00× |
-| Perspektif | 1.02× |
+| Eksen hizalı | 1.00× |
+| Dalış perspektifi, dönmesiz | 1.02× |
 | 15° dönme | 1.50× |
+| 30° dönme | 1.87× |
 | **45° dönme** | **2.00×** |
 
-Şişmeyi yapan **dönme**, perspektif değil.
+Şişmeyi yapan **dönme**, perspektif değil: 55°'lik bakış açısı tek başına
+%2'ye mal oluyor, 45°'lik dönme ise alanı ikiye katlıyor.
+
+> **Bu tablo burada doğruydu, `README.md`'de yanlıştı.** İngilizce sürüm bir
+> ara "tam karşıdan 1.11×, 30° dönme 1.86×" diyordu; ikisi de yeniden
+> üretilemiyor. `tests/test_corners.py` bu sahneleri çizip oranları her
+> koşumda basıyor ve 1.00× ile 1.87× veriyor. Tek ölçümün iki kopyası
+> ayrışmış — bu deponun en çok tekrarlanan hatası, ve önemli sayıların
+> düzyazıya yazılmak yerine kodda türetilmesinin sebebi.
 
 > **Bir iddia ölçüldü ve yanlış çıktı.** "Kutu QR'dan 2 kat büyük olduğu için
 > geçerli bir vuruş *AV dışında* sanılabilir" denmişti. Yanlış: Hedef Vuruş
@@ -266,7 +275,7 @@ hiçbir şey fark etmez.
 ## Testler
 
 ```bash
-python3 -m pytest tests/ -q     # 27 fonksiyon / 97 alt-kontrol
+python3 -m pytest tests/ -q     # 50 fonksiyon / 176 alt-kontrol
 ```
 
 Testlerin çoğu **gerçek bir hatadan sonra** yazıldı ve o hatanın nasıl
@@ -277,7 +286,15 @@ oluştuğu testin başında anlatılıyor:
   güneybatısını gösteriyordu (iki farklı "home" karıştırılmıştı).
 - `test_state_construction.py` — her FSM durumunu **kuruyor**. `takeoff_state.py`
   bir ara `import config` içermiyordu; uçak hiçbir koşulda kalkamıyordu ve
-  bu yalnızca bir *uyarı* olarak loglanıyordu.
+  bu yalnızca bir *uyarı* olarak loglanıyordu. Eskiden yalnızca komut
+  tablosunu geziyordu — 9 durumun 6'sı — ve dalış zincirinin tamamı dışarıda
+  kalıyordu; artık paketin kendisini geziyor.
+- `test_approach_state.py` — dalışa **ne zaman** geçileceğine karar veren
+  durum. Buradaki tek "hatadan sonra değil, ölçümden sonra" yazılmış test:
+  kapsam ölçümü `approach_state.py`'ı %0'da gösterdi, test paketi onu hiç
+  import etmiyordu. Sabiti kendine tekrarlatmak yerine, `DIVE`'a geçişin
+  gerçekte hangi mesafede olduğunu ikili aramayla bulup config değeriyle
+  karşılaştırıyor.
 - `test_gps_guidance.py` — dalıştaki yanal düzeltmenin **işaret yönünü**
   kilitler. Yanlış yöne yatan bir düzeltme sapmayı kapatmaz, büyütür.
 
