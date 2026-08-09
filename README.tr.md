@@ -178,15 +178,31 @@ Bu yüzden pull-up tabanı 20 m'den **30 m**'ye çıkarıldı — 20 m'de uçak
 2.87–4.00 m'ye kadar iniyordu, ki simülasyonda çarpmasa da gerçekte sıfır
 paydır.
 
-**Uçtan uca sonuç** (kamera zinciri açık, 5 koşum, 2026-08-06): QR
-**38.1–44.1 m** arasında okundu, **5/5 başarı**, hepsinde AV'nin tamamen
-içinde.
+**Uçtan uca sonuç** (kamera zinciri açık, **21 koşum**): QR **38.1–44.2 m**
+arasında okundu, ortanca 41.5 m, standart sapma 1.81 m. **21/21 başarı** —
+her koşumda en az bir çözülmüş kare AV'nin tamamen içinde.
 
-Koşumlar arası dağılım gerçek ve tek bir beşliğin gösterebileceğinden geniş.
-Daha önceki bir beşli 41.7–46.6 m vermişti, bu beşli 38.1–44.1 m. İkisi
-örtüşüyor, örneklem küçük ve arada doku değişti — yani bu bir eğilim değil,
-saçılma. Ama 38.1 m kayıtlardaki **en kötü** gözlem ve
-`config.QR_FIRST_DETECT_ALTITUDE_M` ondan alınıyor.
+Bu iş beş koşumla başladı; beş koşum bir saçılmanın *var olduğunu* gösterir
+ama biçimi hakkında bir şey söyleyemez. Aynı yapı üzerinde on altı koşum daha
+yapıldı. Ne değişti, ne değişmedi:
+
+| | 5 koşum | 21 koşum |
+|---|---|---|
+| İlk tespit | 38.1 – 44.1 m | 38.1 – **44.2** m |
+| Ortanca | — | **41.5 m** |
+| Standart sapma | — | **1.81 m** |
+| Başarı | 5/5 | **21/21** |
+
+**Hiçbiri 38.1 m'nin altına inmedi.** O değer, elde yalnızca beş koşum varken
+`config.QR_FIRST_DETECT_ALTITUDE_M` için seçilmişti; on altı koşum daha onu
+yerinden oynatamadı. Raporlanmaya değer sonuç sabitin *değişmemesi*: beş
+örnekle yapılmış ihtiyatlı bir seçim, dört katı kanıta dayandı.
+
+> **21/21, "%100 başarı" demek değildir ve öyle aktarılmamalı.** *n* denemede
+> sıfır başarısızlık varsa üçler kuralı, başarısızlık oranının %95 üst sınırını
+> kabaca 3/*n* verir — burada yaklaşık **%14**. 21 koşumun kazandırdığı şey
+> dağılımın kullanılabilir bir resmi; güvenilirlik rakamı için bambaşka bir
+> büyüklükte uçuş gerekir, ve onun yeri simülasyon değildir.
 
 ---
 
@@ -206,12 +222,41 @@ irtifa maliyeti hıza göre değişir.
 
 | | Önce | Sonra |
 |---|---|---|
-| Geçerli kare | 1 | **5 – 10** |
+| Geçerli kare | 1 | **5 – 11** |
 | En düşük irtifa | ~29.7 m | 19.05 / 19.08 m |
 
-Burada bir ara "12" yazıyordu; o tek bir iyi uçuştu. Beş koşum
-5 / 7 / 10 / 10 / 10 veriyor. En kötüsü bile gerekenin beş katı — kurulabilecek
-dürüst iddia bu.
+Burada bir ara "12" yazıyordu; o tek bir iyi uçuştu. 21 koşumda sayı
+**5 ile 11 arasında, ortanca 8**. En kötü koşum bile gerekenin beş katını
+topladı — kurulabilecek dürüst iddia bu, en iyisi değil.
+
+---
+
+## Taşınabilir modüller
+
+İki dosya hiçbir şeye bağımlı değil (yalnızca standart kütüphane) ve olduğu
+gibi başka bir projeye kopyalanabilir:
+
+**`dive_geometry.py`** — yukarıdaki türetmenin çağrılabilir hâli. Lens ve
+sensörden ya da FOV ve en-boy oranından kamera geometrisi; tetik mesafesi;
+görüş hattı; yerdeki iz düşümü; görünür irtifa bandı; tespit penceresi.
+İçinde `effective_path_angle_deg()` de var — uçuş kaydından *gerçekleşen* yol
+açısını geri çözer, ki o sayıyı elde etmenin dürüst yolu budur.
+
+**`server_time.py`** — bir görev sunucusu için saat farkı takibi ve zaman
+damgası biçimleme. Tasarım kuralı şu: fark bir kez bile kurulmamışsa zaman
+damgası üretmeyi **reddeder**, yerel saate düşmez. Sessizce yerel saate düşen
+bir eksiklik tamamen normal görünür, her tip kontrolünden geçer ve kaydın
+tamamını geçersiz kılar.
+
+```bash
+python3 dive_geometry.py     # calisir demo, yukaridaki tabloyu basar
+python3 server_time.py
+```
+
+Bağımsızlıkları iddia değil, test edilmiş: `tests/test_dive_geometry.py`
+modülü **ayrı bir süreçte** yükleyip hiçbir proje modülünü ya da ağır
+bağımlılığı içeri almadığını doğruluyor, ve CI aynı iki dosyayı temiz bir
+makinede çalıştırıyor.
 
 ---
 
@@ -275,7 +320,7 @@ hiçbir şey fark etmez.
 ## Testler
 
 ```bash
-python3 -m pytest tests/ -q     # 54 fonksiyon / 194 alt-kontrol
+python3 -m pytest tests/ -q     # 59 fonksiyon / 211 alt-kontrol
 ```
 
 Testlerin çoğu **gerçek bir hatadan sonra** yazıldı ve o hatanın nasıl
@@ -295,6 +340,12 @@ oluştuğu testin başında anlatılıyor:
   import etmiyordu. Sabiti kendine tekrarlatmak yerine, `DIVE`'a geçişin
   gerçekte hangi mesafede olduğunu ikili aramayla bulup config değeriyle
   karşılaştırıyor.
+- `test_pull_up_state.py` — toparlanma. `update()` hiçbir testte çalışmamıştı
+  ve iki arıza biçimi sessiz: pitch'te bir işaret hatası, adı hâlâ `PULL_UP`
+  olan ve hâlâ "tırmanıyor" diye loglayan bir durumu yere çakar; bir tick'i
+  atlamak da MAVSDK'yı toparlanmanın ortasında offboard'dan düşürür.
+- `test_no_telemetry.py` — telemetri hiç gelmezse ne oluyor, ve *Bilinen
+  açıklar*'daki kapalı emniyet denetleyicisi için bir tripwire.
 - `test_gps_guidance.py` — dalıştaki yanal düzeltmenin **işaret yönünü**
   kilitler. Yanlış yöne yatan bir düzeltme sapmayı kapatmaz, büyütür.
 
@@ -346,13 +397,16 @@ anlatan bir testte düşer.
 - `LockEvaluator` (Savaşan görevi) ve NFZ kaçınma bu depoda yok.
 - AV yüzdeleri (%25 yatay / %10 dikey) şartname **metninde geçmiyor**,
   yalnızca şekillerde; değer şeklin görüntüsünden ölçüldü.
-- Uçtan uca sayılar beşer koşumdan geliyor. Beş koşum, dağılımın *var
-  olduğunu* ve kabaca ne kadar geniş olduğunu gösterir; hiçbirine güven
-  aralığı koymaya yetmez.
+- Uçtan uca sayılar 21 koşumdan geliyor: ortanca ve standart sapma için yeter,
+  güvenilirlik rakamı için yetmez — yukarıdaki üçler kuralı notuna bakın.
+  Decode eşiği tablosu ayrı bir ölçüm ve hâlâ irtifa başına dört örneğe
+  dayanıyor.
 
 ---
 
-## Kaynak
+## Lisans ve kaynak
+
+Lisans: [LICENSE](LICENSE) (MIT).
 
 Taban kod takım içi paylaşılan bir ilk sürümden türetilmiştir ve burada
 yazarlarının izniyle yayımlanmaktadır. Bu depodaki simülasyon ortamı, ölçüm

@@ -164,14 +164,33 @@ The pull-up floor was therefore raised from 20 m to **30 m** — at 20 m the
 aircraft bottomed out at 2.87–4.00 m, which does not crash in simulation but
 is zero margin in reality.
 
-**End to end**, camera chain live, 5 runs (2026-08-06): QR read at
-**38.1–44.1 m**, **5/5 success**, every one fully inside the target area.
+**End to end**, camera chain live, **21 runs**: QR read at **38.1–44.2 m**,
+median 41.5 m, standard deviation 1.81 m. **21/21 success** — every run put at
+least one decoded frame fully inside the target area.
 
-The spread between runs is real and larger than one set of five can show.
-An earlier set of five gave 41.7–46.6 m; these gave 38.1–44.1 m. The two
-overlap, the samples are small, and the texture changed in between, so the
-difference is scatter rather than a trend — but 38.1 m is the worst
-observation on record and `config.QR_FIRST_DETECT_ALTITUDE_M` is set from it.
+This began as five runs, and five could show that a spread existed without
+saying anything about its shape. Sixteen more were flown on the same build.
+What changed, and what did not:
+
+| | 5 runs | 21 runs |
+|---|---|---|
+| First detection | 38.1 – 44.1 m | 38.1 – **44.2** m |
+| Median | — | **41.5 m** |
+| Standard deviation | — | **1.81 m** |
+| Success | 5/5 | **21/21** |
+
+**Nothing went below 38.1 m.** That is the value
+`config.QR_FIRST_DETECT_ALTITUDE_M` was set from when only five runs existed,
+and sixteen further flights did not move it. The constant staying put is the
+result worth reporting — a conservative choice made on five samples held up
+against four times the evidence.
+
+> **21 out of 21 is not a 100 % success rate, and it should not be quoted as
+> one.** With zero failures in *n* trials the rule of three puts the 95 %
+> upper bound on the failure rate at roughly 3/*n* — about **14 %** here. What
+> 21 runs buy is a usable picture of the spread. A reliability figure needs a
+> different order of magnitude of flying, and simulation would not be the
+> place to get it.
 
 ---
 
@@ -193,12 +212,12 @@ altitude cost of "keep going for 0.3 s" varies with descent rate.
 
 | | Before | After |
 |---|---|---|
-| Usable frames | 1 | **5 – 10** |
+| Usable frames | 1 | **5 – 11** |
 | Lowest altitude | ~29.7 m | 19.05 / 19.08 m |
 
-"12" appeared here once; it was a single good flight. Five runs give
-5 / 7 / 10 / 10 / 10. The worst is still five times what is required, and
-that is the claim worth making.
+"12" appeared here once; it was a single good flight. Across 21 runs the count
+runs from **5 to 11, median 8**. The worst run still collected five times what
+is required, and that is the claim worth making — not the best one.
 
 ---
 
@@ -286,7 +305,7 @@ so the readout is cropped to 1920×1080, and the vertical FOV that matters is
 ## Tests
 
 ```bash
-python3 -m pytest tests/ -q      # 54 functions / 194 checks
+python3 -m pytest tests/ -q      # 59 functions / 211 checks
 ```
 
 Most tests were written **after a real bug**, and each one opens by
@@ -305,6 +324,12 @@ explaining how that bug happened:
   `approach_state.py` at 0 %, never imported by the suite. It bisects the
   distance at which the handover to `DIVE` actually happens and compares that
   to the configured one, instead of asserting the constant back at itself.
+- `test_pull_up_state.py` — the recovery. `update()` had never run in a test,
+  and two of its failure modes are silent: a sign error on the pitch leaves a
+  state still called `PULL_UP`, still logging "climbing", flying into the
+  ground; and skipping a tick drops MAVSDK out of offboard mid-recovery.
+- `test_no_telemetry.py` — what happens when telemetry never arrives, and a
+  tripwire on the disabled safety checker described under *Known gaps*.
 - `test_gps_guidance.py` — locks the *sign* of the lateral dive correction. A
   correction that banks the wrong way does not close the offset, it widens
   it.
@@ -354,9 +379,10 @@ explains why, instead of failing on the runway.
 - The target-area margins (25 % horizontal, 10 % vertical) were read off a
   figure, not from text.
 - No air-to-air tracking, no no-fly-zone avoidance, no ground-station client.
-- The end-to-end numbers come from five runs each. Five is enough to show that
-  the spread exists and roughly how wide it is; it is not enough to put a
-  confidence interval on any of them.
+- The end-to-end numbers come from 21 runs, which is enough for a median and a
+  standard deviation and not enough for a reliability figure — see the
+  rule-of-three note above. The decode-threshold table is a separate
+  measurement and still rests on four samples per altitude.
 
 ## Licence
 
