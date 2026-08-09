@@ -50,8 +50,17 @@ class ApproachState(BaseState):
             config.TARGET_LATITUDE_DEG, config.TARGET_LONGITUDE_DEG,
         )
 
-        # Ghost point: APPROACH_GHOST_DISTANCE_M behind the target along the
-        # reverse bearing (from target back toward drone).
+        # Ghost point: APPROACH_GHOST_DISTANCE_M PAST the target, along the
+        # same bearing the aircraft is already closing on. Aiming beyond the
+        # target rather than at it keeps the run straight through the dive
+        # trigger instead of levelling off on top of it.
+        #
+        # ⚠️ NOT the reverse bearing - this comment used to say "from target
+        #    back toward drone", which is the opposite of what the line below
+        #    does. Reversing it would drop the waypoint BETWEEN the aircraft
+        #    and the target, so the aircraft levels off short and never reaches
+        #    the arming distance - and nothing raises. Locked down in
+        #    tests/test_approach_state.py.
         ghost_lat, ghost_lon = point_from_bearing(
             config.TARGET_LATITUDE_DEG,
             config.TARGET_LONGITUDE_DEG,
